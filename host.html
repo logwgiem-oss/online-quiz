@@ -3,7 +3,7 @@
 <head>
     <title>Blooket Master Host</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://cdn.jsdelivr.net/npm/pubnub@11.0.2/dist/web/pubnub.min.js"></script>
+    <script src="https://jsdelivr.net"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #0f172a; color: #fff; }
         .box { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 600px; margin: 20px auto; }
@@ -47,7 +47,6 @@
             { q: "What is most practical for survival?", c: ["Water", "Shelter", "Warmth", "Friends"], a: "1" }
         ];
 
-        // DELAY TRACKING PROCESSES UNTIL CODE IS FULLY ALIVE
         window.onload = function() {
             hostUUID = 'host_' + Math.random().toString(36).substring(2, 7);
             pubnub = new PubNub({
@@ -59,20 +58,22 @@
             myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
             document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
             
-            pubnub.subscribe({ channels: [myRoomCode] });
-            pubnub.addListener({
-                message: function(event) {
-                    let msg = event.message;
-                    if (msg.type === 'joinRequest') {
-                        hostState.players[event.publisher] = { id: event.publisher, name: msg.name, coins: 100 };
-                        updateHostLeaderboard();
-                    } else if (msg.type === 'submitAnswer') {
-                        handlePlayerAnswer(event.publisher, msg.guess, msg.correctIndex);
-                    } else if (msg.type === 'requestNextQuestion') {
-                        sendQuestionToSinglePlayer(event.publisher);
-                    }
+            const currentChannel = pubnub.channel(myRoomCode);
+            const hostSubscription = currentChannel.subscription();
+            hostSubscription.subscribe();
+            
+            hostSubscription.onMessage = (event) => {
+                let msg = event.message;
+                if (msg.type === 'joinRequest') {
+                    // Explicit tracking allocation via user targeting keys
+                    hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
+                    updateHostLeaderboard();
+                } else if (msg.type === 'submitAnswer') {
+                    handlePlayerAnswer(msg.sender, msg.guess, msg.correctIndex);
+                } else if (msg.type === 'requestNextQuestion') {
+                    sendQuestionToSinglePlayer(msg.sender);
                 }
-            });
+            };
         };
 
         function updateHostLeaderboard() {
@@ -81,6 +82,7 @@
             if (pList.length === 0) { board.innerHTML = "Lobby empty. Waiting for players..."; return; }
             board.innerHTML = pList.map((p, i) => `<div class="player-badge">#${i+1} ${p.name}: 🪙 ${p.coins}</div>`).join('');
         }
+
         function hostStartGame() {
             if (hostState.roundActive) return;
             hostState.roundActive = true;
@@ -94,10 +96,15 @@
                 if (hostState.timeLeft <= 0) { hostEndGame(); }
             }, 1000);
         }
+
         function sendQuestionToSinglePlayer(uuid) {
             let rand = Math.floor(Math.random() * questions.length);
-            pubnub.publish({ channel: myRoomCode, message: { type: 'nextQuestion', target: uuid, q: questions[rand].q, choices: questions[rand].c, correct: questions[rand].a } });
+            pubnub.publish({
+                channel: myRoomCode,
+                message: { type: 'nextQuestion', target: uuid, q: questions[rand].q, choices: questions[rand].c, correct: questions[rand].a }
+            });
         }
+
         function handlePlayerAnswer(uuid, guess, correctIndex) {
             if (!hostState.roundActive || !hostState.players[uuid]) return;
             let player = hostState.players[uuid];
@@ -123,6 +130,7 @@
             } else { pubnub.publish({ channel: myRoomCode, message: { type: 'coinResult', target: uuid, success: false } }); }
             updateHostLeaderboard();
         }
+
         function hostEndGame() {
             clearInterval(hostState.timerId);
             let sorted = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
