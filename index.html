@@ -3,7 +3,8 @@
 <head>
     <title>Blooket Player Room</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://pubnub.com"></script>
+    <!-- Updated to the latest stable PubNub CDN script link -->
+    <script src="https://cdn.pubnub.com/sdk/javascript/pubnub.11.0.2.min.js"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #f8fafc; color: #1e293b; }
         .container { max-width: 500px; margin: auto; }
@@ -58,10 +59,11 @@
         </div>
     </div>
     <script>
+        const playerUUID = 'user_' + Math.random().toString(36).substring(2, 7);
         const pubnub = new PubNub({
             publishKey: 'pub-c-cb6df64d-df7a-4288-9279-d5c64bf2bf7c',
             subscribeKey: 'sub-c-572765ea-79f9-467f-94d7-b7fa1e97d819',
-            userId: 'user_' + Math.random().toString(36).substring(2, 7)
+            userId: playerUUID
         });
         let myRoomCode = "", myName = "", currentCorrectIndex = "";
         const visualPrizes = ["🪙 Coins", "🚨 Steal!", "🔄 Swap", "💥 Triple!"];
@@ -77,8 +79,8 @@
                 message: function(event) {
                     let msg = event.message;
                     if (msg.type === 'gameStarted') { document.getElementById('waiting-room').style.display = 'none'; document.getElementById('game-screen').style.display = 'block'; }
-                    else if (msg.type === 'nextQuestion' && msg.target === pubnub.getUUID()) { displayQuestion(msg); }
-                    else if (msg.type === 'coinResult' && msg.target === pubnub.getUUID()) { displayAnimation(msg); }
+                    else if (msg.type === 'nextQuestion' && msg.target === playerUUID) { displayQuestion(msg); }
+                    else if (msg.type === 'coinResult' && msg.target === playerUUID) { displayAnimation(msg); }
                     else if (msg.type === 'gameOver') {
                         let w = msg.winner || {name: "Nobody", coins: 0};
                         document.getElementById('game-screen').style.display = 'none'; document.getElementById('game-over-screen').style.display = 'block';
