@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Blooket Master Host</title>
+    <style>
+        body { font-family: sans-serif; background: #0f172a; color: #fff; text-align: center; padding: 20px; }
+        .box { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 600px; margin: 20px auto; }
+        .start-btn { background: #10b981; color: white; padding: 15px; font-size: 18px; font-weight: bold; border-radius: 8px; border: none; cursor: pointer; width: 80%; }
+        .player-badge { display: inline-block; background: #334155; padding: 8px 16px; margin: 5px; border-radius: 20px; font-weight: bold; color: #f59e0b; font-size: 20px; }
+        #timer-display { font-size: 64px; color: #ef4444; font-weight: bold; font-family: monospace; }
+        #stop-btn { background: #ef4444; padding: 15px; color: white; border: none; border-radius: 8px; cursor: pointer; width: 80%; margin-top: 20px; font-weight: bold; }
+        #winner-screen { font-size: 40px; color: #f59e0b; background: #1e293b; padding: 40px; border-radius: 12px; display: none; max-width: 600px; margin: 20px auto; }
+        /* Style for the new Room Code Box */
+        .code-box { background: #f59e0b; color: #0f172a; padding: 15px; border-radius: 12px; max-width: 600px; margin: 20px auto; font-size: 32px; font-weight: bold; letter-spacing: 2px; }
+    </style>
+</head>
+<body>
+    <div id="main-ui">
+        <h1>👑 Blooket Master Host Dashboard</h1>
+        
+        <!-- New Room Code Visual Anchor -->
+        <div class="code-box" id="room-code-display">
+            🔑 CREATING ROOM CODE...
+        </div>
+
+        <div class="box">
+            <h2>⏱️ Round Clock Timer</h2>
+            <div id="timer-display">5:00</div>
+            <br>
+            <button class="start-btn" onclick="startRound()">🚀 LAUNCH GAME ROUND</button>
+        </div>
+
+        <div class="box">
+            <h2>🏆 Live Coin Standings & Lobby</h2>
+            <div id="leaderboard">Lobby empty. Waiting for players...</div>
+            <button id="stop-btn" onclick="finishGame()">🛑 FORCE END ROUND</button>
+        </div>
+    </div>
+
+    <div id="winner-screen">
+        <p>👑 THE WINNER IS 👑</p>
+        <h1 id="winner-name">Nobody</h1>
+        <p id="winner-coins"></p>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // Connected directly to the hosting server link automatically
+        const socket = io();
+
+        // Automatically tell the server to create a 4-letter room code when this page opens
+        socket.emit('createRoom');
+
+        // Show the generated room code on the host dashboard screen
+        socket.on('roomCreated', (code) => {
+            document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${code}`;
+        });
+
+        function startRound() {
+            socket.emit('startRoundClock');
+        }
+
+        function finishGame() {
+            socket.emit('endGame');
+        }
+
+        socket.on('timerUpdate', (time) => {
+            let mins = Math.floor(time / 60);
+            let secs = time % 60;
+            if (secs < 10) secs = '0' + secs;
+            document.getElementById('timer-display').innerText = `${mins}:${secs}`;
+        });
+
+        socket.on('updatePlayers', (playerList) => {
+            const board = document.getElementById('leaderboard');
+            if (!playerList || playerList.length === 0) {
+                board.innerHTML = "Lobby empty. Waiting for players...";
+                return;
+            }
+            playerList.sort((a, b) => b.coins - a.coins);
+            board.innerHTML = playerList
+                .map((p, i) => `<div class="player-badge">#${i+1} ${p.name}: 🪙 ${p.coins}</div>`)
+                .join('');
+        });
+
+        socket.on('gameOver', (winnerList) => {
+            let w = winnerList[0] || {name: "Nobody", coins: 0};
+            document.getElementById('main-ui').style.display = 'none';
+            document.getElementById('winner-screen').style.display = 'block';
+            document.getElementById('winner-name').innerText = w.name;
+            document.getElementById('winner-coins').innerText = `Finished with a total of 🪙 ${w.coins} coins!`;
+        });
+    </script>
+</body>
+</html>
