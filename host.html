@@ -3,7 +3,6 @@
 <head>
     <title>Blooket Master Host</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Unblocked, secure alternative script link for PubNub -->
     <script src="https://cdn.jsdelivr.net/npm/pubnub@11.0.2/dist/web/pubnub.min.js"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #0f172a; color: #fff; }
@@ -31,12 +30,8 @@
         </div>
     </div>
     <script>
-        const hostUUID = 'host_' + Math.random().toString(36).substring(2, 7);
-        const pubnub = new PubNub({
-            publishKey: 'pub-c-cb6df64d-df7a-4288-9279-d5c64bf2bf7c',
-            subscribeKey: 'sub-c-572765ea-79f9-467f-94d7-b7fa1e97d819',
-            userId: hostUUID
-        });
+        let pubnub, hostUUID, myRoomCode;
+        let hostState = { players: {}, roundActive: false, timeLeft: 300, timerId: null };
         const questions = [
             { q: "What is the capital of France?", c: ["London", "Paris", "Rome", "Berlin"], a: "2" },
             { q: "Which planet is known as the Red Planet?", c: ["Earth", "Mars", "Jupiter", "Venus"], a: "2" },
@@ -51,24 +46,35 @@
             { q: "What is the number of pi?", c: ["3", "1.96", "3.14", "6.357"], a: "3" },
             { q: "What is most practical for survival?", c: ["Water", "Shelter", "Warmth", "Friends"], a: "1" }
         ];
-        let myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
-        document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
-        let hostState = { players: {}, roundActive: false, timeLeft: 300, timerId: null };
-        
-        pubnub.subscribe({ channels: [myRoomCode] });
-        pubnub.addListener({
-            message: function(event) {
-                let msg = event.message;
-                if (msg.type === 'joinRequest') {
-                    hostState.players[event.publisher] = { id: event.publisher, name: msg.name, coins: 100 };
-                    updateHostLeaderboard();
-                } else if (msg.type === 'submitAnswer') {
-                    handlePlayerAnswer(event.publisher, msg.guess, msg.correctIndex);
-                } else if (msg.type === 'requestNextQuestion') {
-                    sendQuestionToSinglePlayer(event.publisher);
+
+        // DELAY TRACKING PROCESSES UNTIL CODE IS FULLY ALIVE
+        window.onload = function() {
+            hostUUID = 'host_' + Math.random().toString(36).substring(2, 7);
+            pubnub = new PubNub({
+                publishKey: 'pub-c-cb6df64d-df7a-4288-9279-d5c64bf2bf7c',
+                subscribeKey: 'sub-c-572765ea-79f9-467f-94d7-b7fa1e97d819',
+                userId: hostUUID
+            });
+
+            myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
+            document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
+            
+            pubnub.subscribe({ channels: [myRoomCode] });
+            pubnub.addListener({
+                message: function(event) {
+                    let msg = event.message;
+                    if (msg.type === 'joinRequest') {
+                        hostState.players[event.publisher] = { id: event.publisher, name: msg.name, coins: 100 };
+                        updateHostLeaderboard();
+                    } else if (msg.type === 'submitAnswer') {
+                        handlePlayerAnswer(event.publisher, msg.guess, msg.correctIndex);
+                    } else if (msg.type === 'requestNextQuestion') {
+                        sendQuestionToSinglePlayer(event.publisher);
+                    }
                 }
-            }
-        });
+            });
+        };
+
         function updateHostLeaderboard() {
             const board = document.getElementById('leaderboard');
             let pList = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
@@ -126,3 +132,4 @@
     </script>
 </body>
 </html>
+
