@@ -30,10 +30,11 @@
         </div>
     </div>
     <script>
+        const hostUUID = 'host_' + Math.random().toString(36).substring(2, 7);
         const pubnub = new PubNub({
             publishKey: 'pub-c-cb6df64d-df7a-4288-9279-d5c64bf2bf7c',
             subscribeKey: 'sub-c-572765ea-79f9-467f-94d7-b7fa1e97d819',
-            userId: 'host_' + Math.random().toString(36).substring(2, 7)
+            userId: hostUUID
         });
         const questions = [
             { q: "What is the capital of France?", c: ["London", "Paris", "Rome", "Berlin"], a: "2" },
@@ -52,6 +53,7 @@
         let myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
         document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
         let hostState = { players: {}, roundActive: false, timeLeft: 300, timerId: null };
+        
         pubnub.subscribe({ channels: [myRoomCode] });
         pubnub.addListener({
             message: function(event) {
@@ -117,7 +119,7 @@
         function hostEndGame() {
             clearInterval(hostState.timerId);
             let sorted = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
-            pubnub.publish({ channel: myRoomCode, message: { type: 'gameOver', winner: sorted[0] } });
+            pubnub.publish({ channel: myRoomCode, message: { type: 'gameOver', winner: sorted } });
             alert("Game Over! Winner listed on player screens.");
         }
     </script>
