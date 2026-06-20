@@ -3,7 +3,7 @@
 <head>
     <title>Blooket Player Room</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://cdn.jsdelivr.net/npm/pubnub@11.0.2/dist/web/pubnub.min.js"></script>
+    <script src="https://jsdelivr.net"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #f8fafc; color: #1e293b; }
         .container { max-width: 500px; margin: auto; }
@@ -61,7 +61,6 @@
         let pubnub, playerUUID, myRoomCode = "", myName = "", currentCorrectIndex = "";
         const visualPrizes = ["🪙 Coins", "🚨 Steal!", "🔄 Swap", "💥 Triple!"];
 
-        // FORCE GAME INTERFACES TO WAIT FOR THE CDN FILE TO BE ALIVE
         window.onload = function() {
             playerUUID = 'user_' + Math.random().toString(36).substring(2, 7);
             pubnub = new PubNub({
@@ -75,59 +74,103 @@
             myRoomCode = document.getElementById('roomcode').value.trim().toUpperCase();
             myName = document.getElementById('username').value.trim();
             if (!myRoomCode || !myName) return alert("Fill in code and nickname!");
+            
             document.getElementById('login-screen').style.display = 'none';
             document.getElementById('waiting-room').style.display = 'block';
-            pubnub.subscribe({ channels: [myRoomCode] });
-            setTimeout(() => { pubnub.publish({ channel: myRoomCode, message: { type: 'joinRequest', name: myName } }); }, 500);
-            pubnub.addListener({
-                message: function(event) {
-                    let msg = event.message;
-                    if (msg.type === 'gameStarted') { document.getElementById('waiting-room').style.display = 'none'; document.getElementById('game-screen').style.display = 'block'; }
-                    else if (msg.type === 'nextQuestion' && msg.target === playerUUID) { displayQuestion(msg); }
-                    else if (msg.type === 'coinResult' && msg.target === playerUUID) { displayAnimation(msg); }
-                    else if (msg.type === 'gameOver') {
-                        let w = msg.winner || {name: "Nobody", coins: 0};
-                        document.getElementById('game-screen').style.display = 'none'; document.getElementById('game-over-screen').style.display = 'block';
-                        document.getElementById('final-winner-text').innerText = `🏆 Final Winner: ${w.name}`;
-                        document.getElementById('final-coins-text').innerHTML = `Total Bank: 🪙 <b>${w.coins}</b> coins!`;
-                    }
+            
+            // Set up channel listener structure using modern V11 specifications
+            const currentChannel = pubnub.channel(myRoomCode);
+            const mySubscription = currentChannel.subscription();
+            mySubscription.subscribe();
+            
+            mySubscription.onMessage = (event) => {
+                let msg = event.message;
+                if (msg.type === 'gameStarted') {
+                    document.getElementById('waiting-room').style.display = 'none';
+                    document.getElementById('game-screen').style.display = 'block';
+                } else if (msg.type === 'nextQuestion' && msg.target === playerUUID) {
+                    displayQuestion(msg);
+                } else if (msg.type === 'coinResult' && msg.target === playerUUID) {
+                    displayAnimation(msg);
+                } else if (msg.type === 'gameOver') {
+                    let w = msg.winner || {name: "Nobody", coins: 0};
+                    document.getElementById('game-screen').style.display = 'none';
+                    document.getElementById('game-over-screen').style.display = 'block';
+                    document.getElementById('final-winner-text').innerText = `🏆 Final Winner: ${w.name}`;
+                    document.getElementById('final-coins-text').innerHTML = `Total Bank: 🪙 <b>${w.coins}</b> coins!`;
                 }
-            });
+            };
+
+            // Allow the subscription channel open process to settle before triggering push
+            setTimeout(() => {
+                pubnub.publish({
+                    channel: myRoomCode,
+                    message: { type: 'joinRequest', name: myName, sender: playerUUID }
+                });
+            }, 600);
         }
+
         function displayQuestion(data) {
             currentCorrectIndex = data.correct;
-            document.getElementById('button-grid').style.display = 'grid'; document.getElementById('button-grid').style.pointerEvents = 'auto';
-            document.getElementById('reward-zone').style.display = 'none'; document.getElementById('next-btn').style.display = 'none';
+            document.getElementById('button-grid').style.display = 'grid';
+            document.getElementById('button-grid').style.pointerEvents = 'auto';
+            document.getElementById('reward-zone').style.display = 'none';
+            document.getElementById('next-btn').style.display = 'none';
             document.getElementById('question-text').innerText = data.q;
-            document.getElementById('b1').innerText = data.choices; document.getElementById('b2').innerText = data.choices;
-            document.getElementById('b3').innerText = data.choices; document.getElementById('b4').innerText = data.choices;
+            document.getElementById('b1').innerText = data.choices[0];
+            document.getElementById('b2').innerText = data.choices[1];
+            document.getElementById('b3').innerText = data.choices[2];
+            document.getElementById('b4').innerText = data.choices[3];
         }
+
         function pick(choiceNum) {
             document.getElementById('button-grid').style.pointerEvents = 'none';
-            pubnub.publish({ channel: myRoomCode, message: { type: 'submitAnswer', guess: choiceNum, correctIndex: currentCorrectIndex } });
+            pubnub.publish({
+                channel: myRoomCode,
+                message: { type: 'submitAnswer', guess: choiceNum, correctIndex: currentCorrectIndex, sender: playerUUID }
+            });
         }
-        function getNextQuestion() { pubnub.publish({ channel: myRoomCode, message: { type: 'requestNextQuestion' } }); }
+
+        function getNextQuestion() {
+            pubnub.publish({
+                channel: myRoomCode,
+                message: { type: 'requestNextQuestion', sender: playerUUID }
+            });
+        }
+
         function displayAnimation(data) {
             const grid = document.getElementById('button-grid'), rewardZone = document.getElementById('reward-zone'), wheel = document.getElementById('lucky-wheel'), status = document.getElementById('spin-status'), msgBox = document.getElementById('final-msg'), nextBtn = document.getElementById('next-btn');
-            grid.style.display = 'none'; rewardZone.style.display = 'block';
+            grid.style.display = 'none';
+            rewardZone.style.display = 'block';
             if (data.success) {
-                msgBox.innerText = ""; status.innerText = "✨ CORRECT ANSWER!"; wheel.classList.add('spinning');
+                msgBox.innerText = "";
+                status.innerText = "✨ CORRECT ANSWER!";
+                wheel.classList.add('spinning');
                 let shuffleTimer = setInterval(() => { wheel.innerText = visualPrizes[Math.floor(Math.random() * visualPrizes.length)]; }, 60);
                 setTimeout(() => {
-                    clearInterval(shuffleTimer); wheel.classList.remove('spinning'); wheel.innerText = data.reward.display;
-                    msgBox.className = "win-gold"; msgBox.innerText = data.reward.msg; nextBtn.style.display = 'block';
+                    clearInterval(shuffleTimer);
+                    wheel.classList.remove('spinning');
+                    wheel.innerText = data.reward.display;
+                    msgBox.className = "win-gold";
+                    msgBox.innerText = data.reward.msg;
+                    nextBtn.style.display = 'block';
                 }, 1200);
             } else {
-                wheel.innerText = "❌"; status.innerText = "INCORRECT!"; let penaltyTime = 3; msgBox.className = "lose-gold";
+                wheel.innerText = "❌";
+                status.innerText = "INCORRECT!";
+                let penaltyTime = 3;
+                msgBox.className = "lose-gold";
                 msgBox.innerHTML = `Wrong answer!<br><span class="cooldown-text">Locked out for ${penaltyTime}s...</span>`;
                 let cooldownInterval = setInterval(() => {
                     penaltyTime--;
                     if (penaltyTime > 0) { msgBox.innerHTML = `Wrong answer!<br><span class="cooldown-text">Locked out for ${penaltyTime}s...</span>`; }
-                    else { clearInterval(cooldownInterval); rewardZone.style.display = 'none'; grid.style.display = 'grid'; grid.style.pointerEvents = 'auto'; }
+                    else {
+                        clearInterval(cooldownInterval);
+                        rewardZone.style.display = 'none';
+                        grid.style.display = 'grid';
+                        grid.style.pointerEvents = 'auto';
+                    }
                 }, 1000);
             }
         }
-    </script>
-</body>
-</html>
 
