@@ -3,7 +3,6 @@
 <head>
     <title>Blooket Player Room</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <!-- Unblocked, secure alternative script link for PubNub -->
     <script src="https://cdn.jsdelivr.net/npm/pubnub@11.0.2/dist/web/pubnub.min.js"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #f8fafc; color: #1e293b; }
@@ -59,14 +58,19 @@
         </div>
     </div>
     <script>
-        const playerUUID = 'user_' + Math.random().toString(36).substring(2, 7);
-        const pubnub = new PubNub({
-            publishKey: 'pub-c-cb6df64d-df7a-4288-9279-d5c64bf2bf7c',
-            subscribeKey: 'sub-c-572765ea-79f9-467f-94d7-b7fa1e97d819',
-            userId: playerUUID
-        });
-        let myRoomCode = "", myName = "", currentCorrectIndex = "";
+        let pubnub, playerUUID, myRoomCode = "", myName = "", currentCorrectIndex = "";
         const visualPrizes = ["🪙 Coins", "🚨 Steal!", "🔄 Swap", "💥 Triple!"];
+
+        // FORCE GAME INTERFACES TO WAIT FOR THE CDN FILE TO BE ALIVE
+        window.onload = function() {
+            playerUUID = 'user_' + Math.random().toString(36).substring(2, 7);
+            pubnub = new PubNub({
+                publishKey: 'pub-c-cb6df64d-df7a-4288-9279-d5c64bf2bf7c',
+                subscribeKey: 'sub-c-572765ea-79f9-467f-94d7-b7fa1e97d819',
+                userId: playerUUID
+            });
+        };
+
         function joinLobby() {
             myRoomCode = document.getElementById('roomcode').value.trim().toUpperCase();
             myName = document.getElementById('username').value.trim();
@@ -126,3 +130,4 @@
     </script>
 </body>
 </html>
+
