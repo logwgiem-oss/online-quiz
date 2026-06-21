@@ -3,6 +3,7 @@
 <head>
     <title>Blooket Player Room</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://jsdelivr.net"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #f8fafc; color: #1e293b; }
         .container { max-width: 500px; margin: auto; }
@@ -57,8 +58,7 @@
         </div>
     </div>
     <script>
-        let playerUUID = 'user_' + Math.random().toString(36).substring(2, 7);
-        let myRoomCode = "", myName = "", currentCorrectIndex = "", loopInterval;
+        let peer, conn, myRoomCode = "", myName = "", currentCorrectIndex = "";
         const visualPrizes = ["🪙 Coins", "🚨 Steal!", "🔄 Swap", "💥 Triple!"];
 
         function joinLobby() {
@@ -66,47 +66,35 @@
             myName = document.getElementById('username').value.trim();
             if (!myRoomCode || !myName) return alert("Fill in code and nickname!");
             
-            document.getElementById('login-screen').style.display = 'none';
-            document.getElementById('waiting-room').style.display = 'block';
+            // Generate a secure connection network link
+            peer = new Peer();
             
-            // Loop checker that avoids browser blockages completely
-            loopInterval = setInterval(() => {
-                fetch(`https://allorigins.win{encodeURIComponent('https://ntfy.sh_' + myRoomCode + '/json?poll=1')}`)
-                .then(res => res.json())
-                .then(data => {
-                    let lines = data.contents.trim().split('\n');
-                    lines.forEach(line => {
-                        if(!line) return;
-                        let serverRaw = JSON.parse(line);
-                        if(!serverRaw.message) return;
-                        let msg = JSON.parse(serverRaw.message);
-                        
-                        if (msg.type === 'gameStarted') {
-                            document.getElementById('waiting-room').style.display = 'none';
-                            document.getElementById('game-screen').style.display = 'block';
-                        } else if (msg.type === 'nextQuestion' && msg.target === playerUUID) {
-                            displayQuestion(msg);
-                        } else if (msg.type === 'coinResult' && msg.target === playerUUID) {
-                            displayAnimation(msg);
-                        } else if (msg.type === 'gameOver') {
-                            clearInterval(loopInterval);
-                            let w = msg.winner || {name: "Nobody", coins: 0};
-                            document.getElementById('game-screen').style.display = 'none';
-                            document.getElementById('game-over-screen').style.display = 'block';
-                            document.getElementById('final-winner-text').innerText = `🏆 Final Winner: ${w.name}`;
-                            document.getElementById('final-coins-text').innerHTML = `Total Bank: 🪙 <b>${w.coins}</b> coins!`;
-                        }
-                    });
-                }).catch(e => {});
-            }, 1500);
+            peer.on('open', function(id) {
+                // Link directly to the host's custom room code ID
+                conn = peer.connect('BLOOKET_ROOM_' + myRoomCode);
+                
+                conn.on('open', function() {
+                    document.getElementById('login-screen').style.display = 'none';
+                    document.getElementById('waiting-room').style.display = 'block';
+                    conn.send({ type: 'joinRequest', name: myName });
+                });
 
-            sendDataToServer({ type: 'joinRequest', name: myName, sender: playerUUID });
-        }
-
-        function sendDataToServer(data) {
-            fetch(`https://ntfy.sh_${myRoomCode}`, {
-                method: 'POST',
-                body: JSON.stringify(data)
+                conn.on('data', function(data) {
+                    if (data.type === 'gameStarted') {
+                        document.getElementById('waiting-room').style.display = 'none';
+                        document.getElementById('game-screen').style.display = 'block';
+                    } else if (data.type === 'nextQuestion') {
+                        displayQuestion(data);
+                    } else if (data.type === 'coinResult') {
+                        displayAnimation(data);
+                    } else if (data.type === 'gameOver') {
+                        let w = data.winner || {name: "Nobody", coins: 0};
+                        document.getElementById('game-screen').style.display = 'none';
+                        document.getElementById('game-over-screen').style.display = 'block';
+                        document.getElementById('final-winner-text').innerText = `🏆 Final Winner: ${w.name}`;
+                        document.getElementById('final-coins-text').innerHTML = `Total Bank: 🪙 <b>${w.coins}</b> coins!`;
+                    }
+                });
             });
         }
 
@@ -117,7 +105,6 @@
             document.getElementById('reward-zone').style.display = 'none';
             document.getElementById('next-btn').style.display = 'none';
             document.getElementById('question-text').innerText = data.q;
-            // FIX: Fixed the text choices array placement index values
             document.getElementById('b1').innerText = data.choices[0];
             document.getElementById('b2').innerText = data.choices[1];
             document.getElementById('b3').innerText = data.choices[2];
@@ -126,11 +113,11 @@
 
         function pick(choiceNum) {
             document.getElementById('button-grid').style.pointerEvents = 'none';
-            sendDataToServer({ type: 'submitAnswer', guess: choiceNum, correctIndex: currentCorrectIndex, sender: playerUUID });
+            conn.send({ type: 'submitAnswer', guess: choiceNum, correctIndex: currentCorrectIndex });
         }
 
         function getNextQuestion() {
-            sendDataToServer({ type: 'requestNextQuestion', sender: playerUUID });
+            conn.send({ type: 'requestNextQuestion' });
         }
 
         function displayAnimation(data) {
@@ -158,4 +145,5 @@
     </script>
 </body>
 </html>
+
 
