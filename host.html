@@ -3,7 +3,6 @@
 <head>
     <title>Blooket Master Host</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://jsdelivr.net"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #0f172a; color: #fff; }
         .box { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 600px; margin: 20px auto; }
@@ -30,15 +29,9 @@
         </div>
     </div>
     <script>
-        const supabaseUrl = "https://supabase.co";
-        const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94d3VuYnNoZmJlanFpZG92cGZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTg5NjEwMDAsImV4cCI6MjAzNDUyMTAwMH0.1_K8X5h8pL4A7V_u24_uD-8V4A7V_u24_uD-8V4A7V_u";
-        
-        // FIX: Changed variable name to supabaseDb so it doesn't break the script loader
-        const supabaseDb = window.supabase.createClient(supabaseUrl, supabaseKey);
-
         let myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
-        let gameChannel;
         let hostState = { players: {}, roundActive: false, timeLeft: 300, timerId: null };
+        let eventSource;
 
         const questions = [
             { q: "What is the capital of France?", c: ["London", "Paris", "Rome", "Berlin"], a: "2" },
@@ -58,19 +51,30 @@
         window.onload = function() {
             document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
             
-            gameChannel = supabaseDb.channel(myRoomCode);
-            gameChannel.on('broadcast', { event: 'quiz' }, (payload) => {
-                let msg = payload.payload;
-                if (msg.type === 'joinRequest') {
-                    hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
-                    updateHostLeaderboard();
-                } else if (msg.type === 'submitAnswer') {
-                    handlePlayerAnswer(msg.sender, msg.guess, msg.correctIndex);
-                } else if (msg.type === 'requestNextQuestion') {
-                    sendQuestionToSinglePlayer(msg.sender);
+            eventSource = new EventSource(`https://ntfy.sh{myRoomCode}/sse`);
+            eventSource.onmessage = function(event) {
+                try {
+                    let msg = JSON.parse(event.data);
+                    if (msg.type === 'joinRequest') {
+                        hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
+                        updateHostLeaderboard();
+                    } else if (msg.type === 'submitAnswer') {
+                        handlePlayerAnswer(msg.sender, msg.guess, msg.correctIndex);
+                    } else if (msg.type === 'requestNextQuestion') {
+                        sendQuestionToSinglePlayer(msg.sender);
+                    }
+                } catch(e) {
+                    // Ignore empty system test signals from network
                 }
-            }).subscribe();
+            };
         };
+
+        function sendBroadcast(data) {
+            fetch(`https://ntfy.sh{myRoomCode}`, {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
+        }
 
         function updateHostLeaderboard() {
             const board = document.getElementById('leaderboard');
@@ -82,23 +86,20 @@
         function hostStartGame() {
             if (hostState.roundActive) return;
             hostState.roundActive = true;
-            gameChannel.send({ type: 'broadcast', event: 'quiz', payload: { type: 'gameStarted' } });
+            sendBroadcast({ type: 'gameStarted' });
             Object.keys(hostState.players).forEach(uuid => { sendQuestionToSinglePlayer(uuid); });
             hostState.timerId = setInterval(() => {
                 hostState.timeLeft--;
                 let mins = Math.floor(hostState.timeLeft / 60), secs = hostState.timeLeft % 60;
                 document.getElementById('timer-display').innerText = `${mins}:${secs < 10 ? '0'+secs : secs}`;
-                gameChannel.send({ type: 'broadcast', event: 'quiz', payload: { type: 'timerUpdate', time: hostState.timeLeft } });
+                sendBroadcast({ type: 'timerUpdate', time: hostState.timeLeft });
                 if (hostState.timeLeft <= 0) { hostEndGame(); }
             }, 1000);
         }
 
         function sendQuestionToSinglePlayer(uuid) {
             let rand = Math.floor(Math.random() * questions.length);
-            gameChannel.send({
-                type: 'broadcast', event: 'quiz',
-                payload: { type: 'nextQuestion', target: uuid, q: questions[rand].q, choices: questions[rand].c, correct: questions[rand].a }
-            });
+            sendBroadcast({ type: 'nextQuestion', target: uuid, q: questions[rand].q, choices: questions[rand].c, correct: questions[rand].a });
         }
 
         function handlePlayerAnswer(uuid, guess, correctIndex) {
@@ -122,15 +123,15 @@
                         outcome = { type: "swap", display: "🔄 COIN SWAP", msg: `🔄 SWAPPED banks with ${victim.name}!` };
                     } else { player.coins += 40; outcome = { type: "coins", display: "🪙 +40 Coins", msg: `Gained +🪙 40 Coins!` }; }
                 } else { player.coins *= 3; outcome = { type: "triple", display: "💥 TRIPLE!!!", msg: `💥 TRIPLE COINS JACKPOT!!!` }; }
-                gameChannel.send({ type: 'broadcast', event: 'quiz', payload: { type: 'coinResult', target: uuid, success: true, reward: outcome } });
-            } else { gameChannel.send({ type: 'broadcast', event: 'quiz', payload: { type: 'coinResult', target: uuid, success: false } }); }
+                sendBroadcast({ type: 'coinResult', target: uuid, success: true, reward: outcome });
+            } else { sendBroadcast({ type: 'coinResult', target: uuid, success: false }); }
             updateHostLeaderboard();
         }
 
         function hostEndGame() {
             clearInterval(hostState.timerId);
             let sorted = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
-            gameChannel.send({ type: 'broadcast', event: 'quiz', payload: { type: 'gameOver', winner: sorted } });
+            sendBroadcast({ type: 'gameOver', winner: sorted });
             alert("Game Over! Winner listed on player screens.");
         }
     </script>
