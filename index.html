@@ -3,7 +3,6 @@
 <head>
     <title>Blooket Player Room</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://unpkg.com"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #f8fafc; color: #1e293b; }
         .container { max-width: 500px; margin: auto; }
@@ -59,7 +58,7 @@
     </div>
     <script>
         let playerUUID = 'user_' + Math.random().toString(36).substring(2, 7);
-        let client, myRoomCode = "", myName = "", currentCorrectIndex = "";
+        let myRoomCode = "", myName = "", currentCorrectIndex = "", pollTimer;
         const visualPrizes = ["🪙 Coins", "🚨 Steal!", "🔄 Swap", "💥 Triple!"];
 
         function joinLobby() {
@@ -70,38 +69,46 @@
             document.getElementById('login-screen').style.display = 'none';
             document.getElementById('waiting-room').style.display = 'block';
             
-            // Connect to the free public network
-            client = mqtt.connect('wss://://hivemq.com');
-            
-            client.on('connect', function () {
-                client.subscribe('blooket_quiz_room_' + myRoomCode);
-                
-                // Tell the host we have arrived
-                sendMsg({ type: 'joinRequest', name: myName, sender: playerUUID });
-            });
+            // Safe Native long-polling loops that can never be script blocked
+            pollTimer = setInterval(() => {
+                fetch(`https://ntfy.sh{myRoomCode}/json?poll=1`)
+                .then(res => res.text())
+                .then(text => {
+                    if (!text.trim()) return;
+                    let lines = text.trim().split('\n');
+                    lines.forEach(line => {
+                        try {
+                            let serverRaw = JSON.parse(line);
+                            let msg = JSON.parse(serverRaw.message);
+                            
+                            if (msg.type === 'gameStarted') {
+                                document.getElementById('waiting-room').style.display = 'none';
+                                document.getElementById('game-screen').style.display = 'block';
+                            } else if (msg.type === 'nextQuestion' && msg.target === playerUUID) {
+                                displayQuestion(msg);
+                            } else if (msg.type === 'coinResult' && msg.target === playerUUID) {
+                                displayAnimation(msg);
+                            } else if (msg.type === 'gameOver') {
+                                clearInterval(pollTimer);
+                                let w = msg.winner || {name: "Nobody", coins: 0};
+                                document.getElementById('game-screen').style.display = 'none';
+                                document.getElementById('game-over-screen').style.display = 'block';
+                                document.getElementById('final-winner-text').innerText = `🏆 Final Winner: ${w.name}`;
+                                document.getElementById('final-coins-text').innerHTML = `Total Bank: 🪙 <b>${w.coins}</b> coins!`;
+                            }
+                        } catch(err) {}
+                    });
+                }).catch(e => {});
+            }, 1000);
 
-            client.on('message', function (topic, payload) {
-                let msg = JSON.parse(payload.toString());
-                
-                if (msg.type === 'gameStarted') {
-                    document.getElementById('waiting-room').style.display = 'none';
-                    document.getElementById('game-screen').style.display = 'block';
-                } else if (msg.type === 'nextQuestion' && msg.target === playerUUID) {
-                    displayQuestion(msg);
-                } else if (msg.type === 'coinResult' && msg.target === playerUUID) {
-                    displayAnimation(msg);
-                } else if (msg.type === 'gameOver') {
-                    let w = msg.winner || {name: "Nobody", coins: 0};
-                    document.getElementById('game-screen').style.display = 'none';
-                    document.getElementById('game-over-screen').style.display = 'block';
-                    document.getElementById('final-winner-text').innerText = `🏆 Final Winner: ${w.name}`;
-                    document.getElementById('final-coins-text').innerHTML = `Total Bank: 🪙 <b>${w.coins}</b> coins!`;
-                }
-            });
+            sendMsg({ type: 'joinRequest', name: myName, sender: playerUUID });
         }
 
         function sendMsg(data) {
-            client.publish('blooket_quiz_room_' + myRoomCode, JSON.stringify(data));
+            fetch(`https://ntfy.sh{myRoomCode}`, {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
         }
 
         function displayQuestion(data) {
@@ -151,6 +158,7 @@
     </script>
 </body>
 </html>
+
 
 
 
