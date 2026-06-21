@@ -32,7 +32,9 @@
     <script>
         const supabaseUrl = "https://supabase.co";
         const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94d3VuYnNoZmJlanFpZG92cGZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTg5NjEwMDAsImV4cCI6MjAzNDUyMTAwMH0.1_K8X5h8pL4A7V_u24_uD-8V4A7V_u24_uD-8V4A7V_u";
-        const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+        
+        // FIX: Changed variable name to supabaseDb so it doesn't break the script loader
+        const supabaseDb = window.supabase.createClient(supabaseUrl, supabaseKey);
 
         let myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
         let gameChannel;
@@ -56,7 +58,7 @@
         window.onload = function() {
             document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
             
-            gameChannel = supabaseClient.channel(myRoomCode);
+            gameChannel = supabaseDb.channel(myRoomCode);
             gameChannel.on('broadcast', { event: 'quiz' }, (payload) => {
                 let msg = payload.payload;
                 if (msg.type === 'joinRequest') {
@@ -134,4 +136,5 @@
     </script>
 </body>
 </html>
+
 
