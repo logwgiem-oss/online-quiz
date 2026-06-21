@@ -73,7 +73,10 @@
             
             eventSource.onmessage = function(event) {
                 try {
-                    let msg = JSON.parse(event.data);
+                    let serverRaw = JSON.parse(event.data);
+                    // Unpack ntfy system text string wrapper
+                    let msg = JSON.parse(serverRaw.message);
+                    
                     if (msg.type === 'gameStarted') {
                         document.getElementById('waiting-room').style.display = 'none';
                         document.getElementById('game-screen').style.display = 'block';
@@ -89,13 +92,13 @@
                         document.getElementById('final-coins-text').innerHTML = `Total Bank: 🪙 <b>${w.coins}</b> coins!`;
                     }
                 } catch(e) {
-                    // Ignore empty system test signals from network
+                    // Skips default system network text packets safely
                 }
             };
 
             setTimeout(() => {
                 sendDataToServer({ type: 'joinRequest', name: myName, sender: playerUUID });
-            }, 500);
+            }, 800);
         }
 
         function sendDataToServer(data) {
@@ -152,4 +155,5 @@
     </script>
 </body>
 </html>
+
 
