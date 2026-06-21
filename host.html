@@ -3,7 +3,7 @@
 <head>
     <title>Blooket Master Host</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://ably.com"></script>
+    <script src="https://pusher.com"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #0f172a; color: #fff; }
         .box { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 600px; margin: 20px auto; }
@@ -30,7 +30,7 @@
         </div>
     </div>
     <script>
-        const ably = new Ably.Realtime('M-g0bA.9uD_9Q:F6Yd_L2XWcR6N1Z_xGz3v4b5n6m7L8k9J0h1G2f3e4d');
+        const pusher = new Pusher('de4e8ffb1979b9bfcf23', { cluster: 'eu' });
         let myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
         let hostState = { players: {}, roundActive: false, timeLeft: 300, timerId: null };
         let gameChannel;
@@ -53,10 +53,9 @@
         window.onload = function() {
             document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
             
-            gameChannel = ably.channels.get('room_' + myRoomCode);
+            gameChannel = pusher.subscribe('presence-quiz-' + myRoomCode);
             
-            gameChannel.subscribe('msg', function(message) {
-                let msg = message.data;
+            gameChannel.bind('client-event', function(msg) {
                 if (msg.type === 'joinRequest') {
                     hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
                     updateHostLeaderboard();
@@ -78,7 +77,7 @@
         function hostStartGame() {
             if (hostState.roundActive) return;
             hostState.roundActive = true;
-            gameChannel.publish('msg', { type: 'gameStarted' });
+            gameChannel.trigger('client-event', { type: 'gameStarted' });
             setTimeout(() => {
                 Object.keys(hostState.players).forEach(uuid => { sendQuestionToSinglePlayer(uuid); });
             }, 400);
@@ -94,7 +93,7 @@
 
         function sendQuestionToSinglePlayer(uuid) {
             let rand = Math.floor(Math.random() * questions.length);
-            gameChannel.publish('msg', { type: 'nextQuestion', target: uuid, q: questions[rand].q, choices: questions[rand].c, correct: questions[rand].a });
+            gameChannel.trigger('client-event', { type: 'nextQuestion', target: uuid, q: questions[rand].q, choices: questions[rand].c, correct: questions[rand].a });
         }
 
         function handlePlayerAnswer(uuid, guess, correctIndex) {
@@ -118,15 +117,15 @@
                         outcome = { type: "swap", display: "🔄 COIN SWAP", msg: `🔄 SWAPPED banks with ${victim.name}!` };
                     } else { player.coins += 40; outcome = { type: "coins", display: "🪙 +40 Coins", msg: `Gained +🪙 40 Coins!` }; }
                 } else { player.coins *= 3; outcome = { type: "triple", display: "💥 TRIPLE!!!", msg: `💥 TRIPLE COINS JACKPOT!!!` }; }
-                gameChannel.publish('msg', { type: 'coinResult', target: uuid, success: true, reward: outcome });
-            } else { gameChannel.publish('msg', { type: 'coinResult', target: uuid, success: false }); }
+                gameChannel.trigger('client-event', { type: 'coinResult', target: uuid, success: true, reward: outcome });
+            } else { gameChannel.trigger('client-event', { type: 'coinResult', target: uuid, success: false }); }
             updateHostLeaderboard();
         }
 
         function hostEndGame() {
             clearInterval(hostState.timerId);
             let sorted = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
-            gameChannel.publish('msg', { type: 'gameOver', winner: sorted });
+            gameChannel.trigger('client-event', { type: 'gameOver', winner: sorted });
             alert("Game Over! Winner listed on player screens.");
         }
     </script>
