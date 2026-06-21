@@ -3,7 +3,7 @@
 <head>
     <title>Blooket Player Room</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://pusher.com"></script>
+    <script src="https://unpkg.com"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #f8fafc; color: #1e293b; }
         .container { max-width: 500px; margin: auto; }
@@ -58,10 +58,8 @@
         </div>
     </div>
     <script>
-        // Unblocked public client layer setup strings
-        const pusher = new Pusher('de4e8ffb1979b9bfcf23', { cluster: 'eu' });
         let playerUUID = 'user_' + Math.random().toString(36).substring(2, 7);
-        let myRoomCode = "", myName = "", currentCorrectIndex = "", gameChannel;
+        let client, myRoomCode = "", myName = "", currentCorrectIndex = "";
         const visualPrizes = ["🪙 Coins", "🚨 Steal!", "🔄 Swap", "💥 Triple!"];
 
         function joinLobby() {
@@ -72,9 +70,19 @@
             document.getElementById('login-screen').style.display = 'none';
             document.getElementById('waiting-room').style.display = 'block';
             
-            gameChannel = pusher.subscribe('presence-quiz-' + myRoomCode);
+            // Connect to the free public network
+            client = mqtt.connect('wss://://hivemq.com');
             
-            gameChannel.bind('client-event', function(msg) {
+            client.on('connect', function () {
+                client.subscribe('blooket_quiz_room_' + myRoomCode);
+                
+                // Tell the host we have arrived
+                sendMsg({ type: 'joinRequest', name: myName, sender: playerUUID });
+            });
+
+            client.on('message', function (topic, payload) {
+                let msg = JSON.parse(payload.toString());
+                
                 if (msg.type === 'gameStarted') {
                     document.getElementById('waiting-room').style.display = 'none';
                     document.getElementById('game-screen').style.display = 'block';
@@ -90,11 +98,10 @@
                     document.getElementById('final-coins-text').innerHTML = `Total Bank: 🪙 <b>${w.coins}</b> coins!`;
                 }
             });
+        }
 
-            // Trigger join ping onto host screen network layer
-            setTimeout(() => {
-                gameChannel.trigger('client-event', { type: 'joinRequest', name: myName, sender: playerUUID });
-            }, 600);
+        function sendMsg(data) {
+            client.publish('blooket_quiz_room_' + myRoomCode, JSON.stringify(data));
         }
 
         function displayQuestion(data) {
@@ -112,11 +119,11 @@
 
         function pick(choiceNum) {
             document.getElementById('button-grid').style.pointerEvents = 'none';
-            gameChannel.trigger('client-event', { type: 'submitAnswer', guess: choiceNum, correctIndex: currentCorrectIndex, sender: playerUUID });
+            sendMsg({ type: 'submitAnswer', guess: choiceNum, correctIndex: currentCorrectIndex, sender: playerUUID });
         }
 
         function getNextQuestion() {
-            gameChannel.trigger('client-event', { type: 'requestNextQuestion', sender: playerUUID });
+            sendMsg({ type: 'requestNextQuestion', sender: playerUUID });
         }
 
         function displayAnimation(data) {
