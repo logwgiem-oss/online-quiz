@@ -3,6 +3,7 @@
 <head>
     <title>Blooket Player Room</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cloudflare.com"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #f8fafc; color: #1e293b; }
         .container { max-width: 500px; margin: auto; }
@@ -52,7 +53,7 @@
     </div>
     <script>
         let playerUUID = 'user_' + Math.random().toString(36).substring(2, 7);
-        let myRoomCode = "", myName = "", currentCorrectIndex = "", socket;
+        let myRoomCode = "", myName = "", currentCorrectIndex = "", drone, room;
         const visualPrizes = ["🪙 Coins", "🚨 Steal!", "🔄 Swap", "💥 Triple!"];
 
         function joinLobby() {
@@ -63,38 +64,44 @@
             document.getElementById('login-screen').style.display = 'none';
             document.getElementById('waiting-room').style.display = 'block';
             
-            socket = new WebSocket(`wss://://piesocket.com{myRoomCode}?api_key=VCXCEuvK86mN7w76D0CUw4G6O496BWI0us679X8b&notify_self=0`);
+            // Connect to ScaleDrone free channel highway
+            drone = new ScaleDrone('7T79F7vOsh9K3w1f');
             
-            socket.onopen = function() {
-                sendMsg({ type: 'joinRequest', name: myName, sender: playerUUID });
-            };
-
-            socket.onmessage = function(event) {
-                let msg = JSON.parse(event.data);
+            drone.on('open', error => {
+                if (error) return console.error(error);
+                room = drone.subscribe('observable-room-' + myRoomCode);
                 
-                if (msg.type === 'gameStarted') {
-                    document.getElementById('waiting-room').style.display = 'none';
-                    document.getElementById('game-screen').style.display = 'block';
-                } else if (msg.type === 'nextQuestion' && msg.target === playerUUID) {
-                    displayQuestion(msg);
-                } else if (msg.type === 'coinResult' && msg.target === playerUUID) {
-                    displayAnimation(msg);
-                } else if (msg.type === 'gameOver') {
-                    socket.close();
-                    document.getElementById('game-container').innerHTML = `
-                        <h1 style="font-size:36px; color:#1e293b;">⏰ TIME UP!</h1>
-                        <hr>
-                        <h2>🏆 Final Winner: ${msg.winnerName}</h2>
-                        <p style="font-size:22px; color:#f59e0b;">Total Bank: 🪙 <b>${msg.winnerCoins}</b> coins!</p>
-                    `;
-                }
-            };
+                room.on('open', error => {
+                    if (!error) {
+                        sendMsg({ type: 'joinRequest', name: myName, sender: playerUUID });
+                    }
+                });
+
+                room.on('data', msg => {
+                    if (msg.type === 'gameStarted') {
+                        document.getElementById('waiting-room').style.display = 'none';
+                        document.getElementById('game-screen').style.display = 'block';
+                    } else if (msg.type === 'nextQuestion' && msg.target === playerUUID) {
+                        displayQuestion(msg);
+                    } else if (msg.type === 'coinResult' && msg.target === playerUUID) {
+                        displayAnimation(msg);
+                    } else if (msg.type === 'gameOver') {
+                        document.getElementById('game-container').innerHTML = `
+                            <h1 style="font-size:36px; color:#1e293b;">⏰ TIME UP!</h1>
+                            <hr>
+                            <h2>🏆 Final Winner: ${msg.winnerName}</h2>
+                            <p style="font-size:22px; color:#f59e0b;">Total Bank: 🪙 <b>${msg.winnerCoins}</b> coins!</p>
+                        `;
+                    }
+                });
+            });
         }
 
         function sendMsg(data) {
-            if (socket && socket.readyState === WebSocket.OPEN) {
-                socket.send(JSON.stringify(data));
-            }
+            drone.publish({
+                room: 'observable-room-' + myRoomCode,
+                message: data
+            });
         }
 
         function displayQuestion(data) {
@@ -105,7 +112,6 @@
             document.getElementById('next-btn').style.display = 'none';
             document.getElementById('question-text').innerText = data.q;
             
-            // FIX: Added explicit index arrays so the button text maps perfectly
             document.getElementById('b1').innerText = data.choices[0];
             document.getElementById('b2').innerText = data.choices[1];
             document.getElementById('b3').innerText = data.choices[2];
@@ -120,6 +126,10 @@
         function getNextQuestion() {
             sendMsg({ type: 'requestNextQuestion', sender: playerUUID });
         }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const visualPrizes = ["🪙 Coins", "🚨 Steal!", "🔄 Swap", "💥 Triple!"];
+        });
 
         function displayAnimation(data) {
             const grid = document.getElementById('button-grid'), rewardZone = document.getElementById('reward-zone'), wheel = document.getElementById('lucky-wheel'), status = document.getElementById('spin-status'), msgBox = document.getElementById('final-msg'), nextBtn = document.getElementById('next-btn');
@@ -146,6 +156,7 @@
     </script>
 </body>
 </html>
+
 
 
 
