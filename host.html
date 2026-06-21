@@ -31,7 +31,7 @@
     <script>
         let myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
         let hostState = { players: {}, roundActive: false, timeLeft: 300, timerId: null };
-        let eventSource;
+        let loopInterval;
 
         const questions = [
             { q: "What is the capital of France?", c: ["London", "Paris", "Rome", "Berlin"], a: "2" },
@@ -51,29 +51,33 @@
         window.onload = function() {
             document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
             
-            eventSource = new EventSource(`https://ntfy.sh{myRoomCode}/sse`);
-            eventSource.onmessage = function(event) {
-                try {
-                    let serverRaw = JSON.parse(event.data);
-                    // Unpack ntfy system text string wrapper
-                    let msg = JSON.parse(serverRaw.message);
-                    
-                    if (msg.type === 'joinRequest') {
-                        hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
-                        updateHostLeaderboard();
-                    } else if (msg.type === 'submitAnswer') {
-                        handlePlayerAnswer(msg.sender, msg.guess, msg.correctIndex);
-                    } else if (msg.type === 'requestNextQuestion') {
-                        sendQuestionToSinglePlayer(msg.sender);
-                    }
-                } catch(e) {
-                    // Skips default system network text packets safely
-                }
-            };
+            // Loop checker that avoids browser blockages completely
+            loopInterval = setInterval(() => {
+                fetch(`https://allorigins.win{encodeURIComponent('https://ntfy.sh_' + myRoomCode + '/json?poll=1')}`)
+                .then(res => res.json())
+                .then(data => {
+                    let lines = data.contents.trim().split('\n');
+                    lines.forEach(line => {
+                        if(!line) return;
+                        let serverRaw = JSON.parse(line);
+                        if(!serverRaw.message) return;
+                        let msg = JSON.parse(serverRaw.message);
+                        
+                        if (msg.type === 'joinRequest') {
+                            hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
+                            updateHostLeaderboard();
+                        } else if (msg.type === 'submitAnswer') {
+                            handlePlayerAnswer(msg.sender, msg.guess, msg.correctIndex);
+                        } else if (msg.type === 'requestNextQuestion') {
+                            sendQuestionToSinglePlayer(msg.sender);
+                        }
+                    });
+                }).catch(e => {});
+            }, 1500);
         };
 
         function sendBroadcast(data) {
-            fetch(`https://ntfy.sh{myRoomCode}`, {
+            fetch(`https://ntfy.sh_${myRoomCode}`, {
                 method: 'POST',
                 body: JSON.stringify(data)
             });
@@ -82,7 +86,7 @@
         function updateHostLeaderboard() {
             const board = document.getElementById('leaderboard');
             let pList = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
-            if (pList.length === 0) { board.innerHTML = "Lobby empty. Waiting for players... Russo"; return; }
+            if (pList.length === 0) { board.innerHTML = "Lobby empty. Waiting for players..."; return; }
             board.innerHTML = pList.map((p, i) => `<div class="player-badge">#${i+1} ${p.name}: 🪙 ${p.coins}</div>`).join('');
         }
 
@@ -136,11 +140,11 @@
 
         function hostEndGame() {
             clearInterval(hostState.timerId);
+            clearInterval(loopInterval);
             let sorted = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
             sendBroadcast({ type: 'gameOver', winner: sorted });
         }
     </script>
 </body>
 </html>
-
 
