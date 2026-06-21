@@ -30,8 +30,14 @@
         </div>
     </div>
     <script>
-        let pubnub, hostUUID, myRoomCode;
+        const supabaseUrl = "https://supabase.co";
+        const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94d3VuYnNoZmJlanFpZG92cGZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTg5NjEwMDAsImV4cCI6MjAzNDUyMTAwMH0.1_K8X5h8pL4A7V_u24_uD-8V4A7V_u24_uD-8V4A7V_u";
+        const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+
+        let myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
+        let gameChannel;
         let hostState = { players: {}, roundActive: false, timeLeft: 300, timerId: null };
+
         const questions = [
             { q: "What is the capital of France?", c: ["London", "Paris", "Rome", "Berlin"], a: "2" },
             { q: "Which planet is known as the Red Planet?", c: ["Earth", "Mars", "Jupiter", "Venus"], a: "2" },
@@ -48,24 +54,12 @@
         ];
 
         window.onload = function() {
-            hostUUID = 'host_' + Math.random().toString(36).substring(2, 7);
-            pubnub = new PubNub({
-                publishKey: 'pub-c-cb6df64d-df7a-4288-9279-d5c64bf2bf7c',
-                subscribeKey: 'sub-c-572765ea-79f9-467f-94d7-b7fa1e97d819',
-                userId: hostUUID
-            });
-
-            myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
             document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
             
-            const currentChannel = pubnub.channel(myRoomCode);
-            const hostSubscription = currentChannel.subscription();
-            hostSubscription.subscribe();
-            
-            hostSubscription.onMessage = (event) => {
-                let msg = event.message;
+            gameChannel = supabaseClient.channel(myRoomCode);
+            gameChannel.on('broadcast', { event: 'quiz' }, (payload) => {
+                let msg = payload.payload;
                 if (msg.type === 'joinRequest') {
-                    // Explicit tracking allocation via user targeting keys
                     hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
                     updateHostLeaderboard();
                 } else if (msg.type === 'submitAnswer') {
@@ -73,7 +67,7 @@
                 } else if (msg.type === 'requestNextQuestion') {
                     sendQuestionToSinglePlayer(msg.sender);
                 }
-            };
+            }).subscribe();
         };
 
         function updateHostLeaderboard() {
@@ -86,22 +80,22 @@
         function hostStartGame() {
             if (hostState.roundActive) return;
             hostState.roundActive = true;
-            pubnub.publish({ channel: myRoomCode, message: { type: 'gameStarted' } });
+            gameChannel.send({ type: 'broadcast', event: 'quiz', payload: { type: 'gameStarted' } });
             Object.keys(hostState.players).forEach(uuid => { sendQuestionToSinglePlayer(uuid); });
             hostState.timerId = setInterval(() => {
                 hostState.timeLeft--;
                 let mins = Math.floor(hostState.timeLeft / 60), secs = hostState.timeLeft % 60;
                 document.getElementById('timer-display').innerText = `${mins}:${secs < 10 ? '0'+secs : secs}`;
-                pubnub.publish({ channel: myRoomCode, message: { type: 'timerUpdate', time: hostState.timeLeft } });
+                gameChannel.send({ type: 'broadcast', event: 'quiz', payload: { type: 'timerUpdate', time: hostState.timeLeft } });
                 if (hostState.timeLeft <= 0) { hostEndGame(); }
             }, 1000);
         }
 
         function sendQuestionToSinglePlayer(uuid) {
             let rand = Math.floor(Math.random() * questions.length);
-            pubnub.publish({
-                channel: myRoomCode,
-                message: { type: 'nextQuestion', target: uuid, q: questions[rand].q, choices: questions[rand].c, correct: questions[rand].a }
+            gameChannel.send({
+                type: 'broadcast', event: 'quiz',
+                payload: { type: 'nextQuestion', target: uuid, q: questions[rand].q, choices: questions[rand].c, correct: questions[rand].a }
             });
         }
 
@@ -126,15 +120,15 @@
                         outcome = { type: "swap", display: "🔄 COIN SWAP", msg: `🔄 SWAPPED banks with ${victim.name}!` };
                     } else { player.coins += 40; outcome = { type: "coins", display: "🪙 +40 Coins", msg: `Gained +🪙 40 Coins!` }; }
                 } else { player.coins *= 3; outcome = { type: "triple", display: "💥 TRIPLE!!!", msg: `💥 TRIPLE COINS JACKPOT!!!` }; }
-                pubnub.publish({ channel: myRoomCode, message: { type: 'coinResult', target: uuid, success: true, reward: outcome } });
-            } else { pubnub.publish({ channel: myRoomCode, message: { type: 'coinResult', target: uuid, success: false } }); }
+                gameChannel.send({ type: 'broadcast', event: 'quiz', payload: { type: 'coinResult', target: uuid, success: true, reward: outcome } });
+            } else { gameChannel.send({ type: 'broadcast', event: 'quiz', payload: { type: 'coinResult', target: uuid, success: false } }); }
             updateHostLeaderboard();
         }
 
         function hostEndGame() {
             clearInterval(hostState.timerId);
             let sorted = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
-            pubnub.publish({ channel: myRoomCode, message: { type: 'gameOver', winner: sorted } });
+            gameChannel.send({ type: 'broadcast', event: 'quiz', payload: { type: 'gameOver', winner: sorted } });
             alert("Game Over! Winner listed on player screens.");
         }
     </script>
