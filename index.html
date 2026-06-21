@@ -3,7 +3,9 @@
 <head>
     <title>Blooket Player Room</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://jsdelivr.net"></script>
+    <!-- Secure native library link that browsers never block -->
+    <script src="https://gstatic.com"></script>
+    <script src="https://gstatic.com"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #f8fafc; color: #1e293b; }
         .container { max-width: 500px; margin: auto; }
@@ -58,7 +60,13 @@
         </div>
     </div>
     <script>
-        let peer, conn, myRoomCode = "", myName = "", currentCorrectIndex = "";
+        // Free cloud communication credentials
+        const firebaseConfig = { databaseURL: "https://firebaseio.com" };
+        firebase.initializeApp(firebaseConfig);
+        const database = firebase.database();
+
+        let playerUUID = 'user_' + Math.random().toString(36).substring(2, 7);
+        let myRoomCode = "", myName = "", currentCorrectIndex = "";
         const visualPrizes = ["🪙 Coins", "🚨 Steal!", "🔄 Swap", "💥 Triple!"];
 
         function joinLobby() {
@@ -66,33 +74,42 @@
             myName = document.getElementById('username').value.trim();
             if (!myRoomCode || !myName) return alert("Fill in code and nickname!");
             
-            peer = new Peer();
-            
-            peer.on('open', function(id) {
-                conn = peer.connect('BLOOKET_ROOM_' + myRoomCode);
-                
-                conn.on('open', function() {
-                    document.getElementById('login-screen').style.display = 'none';
-                    document.getElementById('waiting-room').style.display = 'block';
-                    conn.send({ type: 'joinRequest', name: myName });
-                });
+            document.getElementById('login-screen').style.display = 'none';
+            document.getElementById('waiting-room').style.display = 'block';
 
-                conn.on('data', function(data) {
-                    if (data.type === 'gameStarted') {
-                        document.getElementById('waiting-room').style.display = 'none';
-                        document.getElementById('game-screen').style.display = 'block';
-                    } else if (data.type === 'nextQuestion') {
-                        displayQuestion(data);
-                    } else if (data.type === 'coinResult') {
-                        displayAnimation(data);
-                    } else if (data.type === 'gameOver') {
-                        let w = data.winner || {name: "Nobody", coins: 0};
-                        document.getElementById('game-screen').style.display = 'none';
-                        document.getElementById('game-over-screen').style.display = 'block';
-                        document.getElementById('final-winner-text').innerText = `🏆 Final Winner: ${w.name}`;
-                        document.getElementById('final-coins-text').innerHTML = `Total Bank: 🪙 <b>${w.coins}</b> coins!`;
-                    }
-                });
+            // Send information directly to the cloud highway
+            database.ref('rooms/' + myRoomCode + '/players/' + playerUUID).set({
+                name: myName,
+                coins: 100,
+                action: "waiting"
+            });
+
+            // Listen for host instructions
+            database.ref('rooms/' + myRoomCode + '/gameState').on('value', function(snapshot) {
+                let state = snapshot.val();
+                if (!state) return;
+
+                if (state.status === 'started') {
+                    document.getElementById('waiting-room').style.display = 'none';
+                    document.getElementById('game-screen').style.display = 'block';
+                } else if (state.status === 'ended') {
+                    document.getElementById('game-screen').style.display = 'none';
+                    document.getElementById('game-over-screen').style.display = 'block';
+                    document.getElementById('final-winner-text').innerText = "🏆 Final Winner: " + state.winnerName;
+                    document.getElementById('final-coins-text').innerHTML = "Total Bank: 🪙 <b>" + state.winnerCoins + "</b> coins!";
+                }
+            });
+
+            // Listen for custom quiz questions sent to this specific player
+            database.ref('rooms/' + myRoomCode + '/playerQuestions/' + playerUUID).on('value', function(snapshot) {
+                let qData = snapshot.val();
+                if (qData) displayQuestion(qData);
+            });
+
+            // Listen for reward spin instructions from correct answers
+            database.ref('rooms/' + myRoomCode + '/playerResults/' + playerUUID).on('value', function(snapshot) {
+                let rData = snapshot.val();
+                if (rData) displayAnimation(rData);
             });
         }
 
@@ -104,7 +121,6 @@
             document.getElementById('next-btn').style.display = 'none';
             document.getElementById('question-text').innerText = data.q;
             
-            // FIX: Added explicit position trackers so text maps perfectly
             document.getElementById('b1').innerText = data.choices[0];
             document.getElementById('b2').innerText = data.choices[1];
             document.getElementById('b3').innerText = data.choices[2];
@@ -113,11 +129,19 @@
 
         function pick(choiceNum) {
             document.getElementById('button-grid').style.pointerEvents = 'none';
-            conn.send({ type: 'submitAnswer', guess: choiceNum, correctIndex: currentCorrectIndex });
+            database.ref('rooms/' + myRoomCode + '/players/' + playerUUID + '/action').set({
+                type: "submitAnswer",
+                guess: choiceNum,
+                correctIndex: currentCorrectIndex,
+                time: Date.now()
+            });
         }
 
         function getNextQuestion() {
-            conn.send({ type: 'requestNextQuestion' });
+            database.ref('rooms/' + myRoomCode + '/players/' + playerUUID + '/action').set({
+                type: "requestNextQuestion",
+                time: Date.now()
+            });
         }
 
         function displayAnimation(data) {
@@ -127,8 +151,8 @@
                 msgBox.innerText = ""; status.innerText = "✨ CORRECT ANSWER!"; wheel.classList.add('spinning');
                 let shuffleTimer = setInterval(() => { wheel.innerText = visualPrizes[Math.floor(Math.random() * visualPrizes.length)]; }, 60);
                 setTimeout(() => {
-                    clearInterval(shuffleTimer); wheel.classList.remove('spinning'); wheel.innerText = data.reward.display;
-                    msgBox.className = "win-gold"; msgBox.innerText = data.reward.msg; nextBtn.style.display = 'block';
+                    clearInterval(shuffleTimer); wheel.classList.remove('spinning'); wheel.innerText = data.rewardDisplay;
+                    msgBox.className = "win-gold"; msgBox.innerText = data.rewardMsg; nextBtn.style.display = 'block';
                 }, 1200);
             } else {
                 wheel.innerText = "❌"; status.innerText = "INCORRECT!"; let penaltyTime = 3; msgBox.className = "lose-gold";
@@ -140,12 +164,6 @@
                         clearInterval(cooldownInterval); rewardZone.style.display = 'none'; grid.style.display = 'grid'; grid.style.pointerEvents = 'auto';
                     }
                 }, 1000);
-            }
-        }
-    </script>
-</body>
-</html>
-
 
 
 
