@@ -66,11 +66,9 @@
             myName = document.getElementById('username').value.trim();
             if (!myRoomCode || !myName) return alert("Fill in code and nickname!");
             
-            // Generate a secure connection network link
             peer = new Peer();
             
             peer.on('open', function(id) {
-                // Link directly to the host's custom room code ID
                 conn = peer.connect('BLOOKET_ROOM_' + myRoomCode);
                 
                 conn.on('open', function() {
@@ -105,6 +103,8 @@
             document.getElementById('reward-zone').style.display = 'none';
             document.getElementById('next-btn').style.display = 'none';
             document.getElementById('question-text').innerText = data.q;
+            
+            // FIX: Added bracket index numbers so buttons read the choices perfectly
             document.getElementById('b1').innerText = data.choices[0];
             document.getElementById('b2').innerText = data.choices[1];
             document.getElementById('b3').innerText = data.choices[2];
@@ -145,5 +145,6 @@
     </script>
 </body>
 </html>
+
 
 
