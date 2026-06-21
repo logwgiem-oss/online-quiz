@@ -3,7 +3,7 @@
 <head>
     <title>Blooket Master Host</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://pusher.com"></script>
+    <script src="https://unpkg.com"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #0f172a; color: #fff; }
         .box { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 600px; margin: 20px auto; }
@@ -30,10 +30,9 @@
         </div>
     </div>
     <script>
-        const pusher = new Pusher('de4e8ffb1979b9bfcf23', { cluster: 'eu' });
         let myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
         let hostState = { players: {}, roundActive: false, timeLeft: 300, timerId: null };
-        let gameChannel;
+        let client;
 
         const questions = [
             { q: "What is the capital of France?", c: ["London", "Paris", "Rome", "Berlin"], a: "2" },
@@ -53,9 +52,15 @@
         window.onload = function() {
             document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
             
-            gameChannel = pusher.subscribe('presence-quiz-' + myRoomCode);
+            client = mqtt.connect('wss://://hivemq.com');
             
-            gameChannel.bind('client-event', function(msg) {
+            client.on('connect', function () {
+                client.subscribe('blooket_quiz_room_' + myRoomCode);
+            });
+
+            client.on('message', function (topic, payload) {
+                let msg = JSON.parse(payload.toString());
+                
                 if (msg.type === 'joinRequest') {
                     hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
                     updateHostLeaderboard();
@@ -67,17 +72,21 @@
             });
         };
 
+        function sendBroadcast(data) {
+            client.publish('blooket_quiz_room_' + myRoomCode, JSON.stringify(data));
+        }
+
         function updateHostLeaderboard() {
             const board = document.getElementById('leaderboard');
             let pList = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
-            if (pList.length === 0) { board.innerHTML = "Lobby empty. Waiting for players..."; return; }
+            if (pList.length === 0) { board.innerHTML = "Lobby empty. Waiting for players... Ready"; return; }
             board.innerHTML = pList.map((p, i) => `<div class="player-badge">#${i+1} ${p.name}: 🪙 ${p.coins}</div>`).join('');
         }
 
         function hostStartGame() {
             if (hostState.roundActive) return;
             hostState.roundActive = true;
-            gameChannel.trigger('client-event', { type: 'gameStarted' });
+            sendBroadcast({ type: 'gameStarted' });
             setTimeout(() => {
                 Object.keys(hostState.players).forEach(uuid => { sendQuestionToSinglePlayer(uuid); });
             }, 400);
@@ -93,7 +102,7 @@
 
         function sendQuestionToSinglePlayer(uuid) {
             let rand = Math.floor(Math.random() * questions.length);
-            gameChannel.trigger('client-event', { type: 'nextQuestion', target: uuid, q: questions[rand].q, choices: questions[rand].c, correct: questions[rand].a });
+            sendBroadcast({ type: 'nextQuestion', target: uuid, q: questions[rand].q, choices: questions[rand].c, correct: questions[rand].a });
         }
 
         function handlePlayerAnswer(uuid, guess, correctIndex) {
@@ -117,20 +126,21 @@
                         outcome = { type: "swap", display: "🔄 COIN SWAP", msg: `🔄 SWAPPED banks with ${victim.name}!` };
                     } else { player.coins += 40; outcome = { type: "coins", display: "🪙 +40 Coins", msg: `Gained +🪙 40 Coins!` }; }
                 } else { player.coins *= 3; outcome = { type: "triple", display: "💥 TRIPLE!!!", msg: `💥 TRIPLE COINS JACKPOT!!!` }; }
-                gameChannel.trigger('client-event', { type: 'coinResult', target: uuid, success: true, reward: outcome });
-            } else { gameChannel.trigger('client-event', { type: 'coinResult', target: uuid, success: false }); }
+                sendBroadcast({ type: 'coinResult', target: uuid, success: true, reward: outcome });
+            } else { sendBroadcast({ type: 'coinResult', target: uuid, success: false }); }
             updateHostLeaderboard();
         }
 
         function hostEndGame() {
             clearInterval(hostState.timerId);
             let sorted = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
-            gameChannel.trigger('client-event', { type: 'gameOver', winner: sorted });
+            sendBroadcast({ type: 'gameOver', winner: sorted });
             alert("Game Over! Winner listed on player screens.");
         }
     </script>
 </body>
 </html>
+
 
 
 
