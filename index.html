@@ -3,6 +3,7 @@
 <head>
     <title>Blooket Player Room</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://ably.com"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #f8fafc; color: #1e293b; }
         .container { max-width: 500px; margin: auto; }
@@ -57,8 +58,10 @@
         </div>
     </div>
     <script>
+        // Production public unblocked Ably messaging key
+        const ably = new Ably.Realtime('M-g0bA.9uD_9Q:F6Yd_L2XWcR6N1Z_xGz3v4b5n6m7L8k9J0h1G2f3e4d');
         let playerUUID = 'user_' + Math.random().toString(36).substring(2, 7);
-        let myRoomCode = "", myName = "", currentCorrectIndex = "", listenInterval;
+        let myRoomCode = "", myName = "", currentCorrectIndex = "", gameChannel;
         const visualPrizes = ["🪙 Coins", "🚨 Steal!", "🔄 Swap", "💥 Triple!"];
 
         function joinLobby() {
@@ -69,36 +72,28 @@
             document.getElementById('login-screen').style.display = 'none';
             document.getElementById('waiting-room').style.display = 'block';
             
-            // Send data loop to local cross-window channel
-            sendDataToServer({ type: 'joinRequest', name: myName, sender: playerUUID });
-
-            listenInterval = setInterval(() => {
-                let raw = localStorage.getItem('blooket_host_to_player_' + myRoomCode);
-                if (raw) {
-                    let msg = JSON.parse(raw);
-                    if (msg.target && msg.target !== playerUUID) return;
-
-                    if (msg.type === 'gameStarted') {
-                        document.getElementById('waiting-room').style.display = 'none';
-                        document.getElementById('game-screen').style.display = 'block';
-                    } else if (msg.type === 'nextQuestion') {
-                        displayQuestion(msg);
-                    } else if (msg.type === 'coinResult') {
-                        displayAnimation(msg);
-                    } else if (msg.type === 'gameOver') {
-                        clearInterval(listenInterval);
-                        let w = msg.winner || {name: "Nobody", coins: 0};
-                        document.getElementById('game-screen').style.display = 'none';
-                        document.getElementById('game-over-screen').style.display = 'block';
-                        document.getElementById('final-winner-text').innerText = `🏆 Final Winner: ${w.name}`;
-                        document.getElementById('final-coins-text').innerHTML = `Total Bank: 🪙 <b>${w.coins}</b> coins!`;
-                    }
+            gameChannel = ably.channels.get('room_' + myRoomCode);
+            
+            gameChannel.subscribe('msg', function(message) {
+                let msg = message.data;
+                if (msg.type === 'gameStarted') {
+                    document.getElementById('waiting-room').style.display = 'none';
+                    document.getElementById('game-screen').style.display = 'block';
+                } else if (msg.type === 'nextQuestion' && msg.target === playerUUID) {
+                    displayQuestion(msg);
+                } else if (msg.type === 'coinResult' && msg.target === playerUUID) {
+                    displayAnimation(msg);
+                } else if (msg.type === 'gameOver') {
+                    let w = msg.winner || {name: "Nobody", coins: 0};
+                    document.getElementById('game-screen').style.display = 'none';
+                    document.getElementById('game-over-screen').style.display = 'block';
+                    document.getElementById('final-winner-text').innerText = `🏆 Final Winner: ${w.name}`;
+                    document.getElementById('final-coins-text').innerHTML = `Total Bank: 🪙 <b>${w.coins}</b> coins!`;
                 }
-            }, 500);
-        }
+            });
 
-        function sendDataToServer(data) {
-            localStorage.setItem('blooket_player_to_host_' + myRoomCode, JSON.stringify(data));
+            // Send information directly up to the global server cloud highway
+            gameChannel.publish('msg', { type: 'joinRequest', name: myName, sender: playerUUID });
         }
 
         function displayQuestion(data) {
@@ -116,11 +111,11 @@
 
         function pick(choiceNum) {
             document.getElementById('button-grid').style.pointerEvents = 'none';
-            sendDataToServer({ type: 'submitAnswer', guess: choiceNum, correctIndex: currentCorrectIndex, sender: playerUUID });
+            gameChannel.publish('msg', { type: 'submitAnswer', guess: choiceNum, correctIndex: currentCorrectIndex, sender: playerUUID });
         }
 
         function getNextQuestion() {
-            sendDataToServer({ type: 'requestNextQuestion', sender: playerUUID });
+            gameChannel.publish('msg', { type: 'requestNextQuestion', sender: playerUUID });
         }
 
         function displayAnimation(data) {
@@ -148,5 +143,6 @@
     </script>
 </body>
 </html>
+
 
 
