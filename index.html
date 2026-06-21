@@ -58,7 +58,7 @@
     </div>
     <script>
         let playerUUID = 'user_' + Math.random().toString(36).substring(2, 7);
-        let myRoomCode = "", myName = "", currentCorrectIndex = "", eventSource;
+        let myRoomCode = "", myName = "", currentCorrectIndex = "", listenInterval;
         const visualPrizes = ["🪙 Coins", "🚨 Steal!", "🔄 Swap", "💥 Triple!"];
 
         function joinLobby() {
@@ -69,40 +69,36 @@
             document.getElementById('login-screen').style.display = 'none';
             document.getElementById('waiting-room').style.display = 'block';
             
-            // Connect to a completely open network line
-            eventSource = new EventSource(`https://nodeflux.org{myRoomCode}`);
-            
-            eventSource.onmessage = function(event) {
-                try {
-                    let msg = JSON.parse(event.data);
+            // Send data loop to local cross-window channel
+            sendDataToServer({ type: 'joinRequest', name: myName, sender: playerUUID });
+
+            listenInterval = setInterval(() => {
+                let raw = localStorage.getItem('blooket_host_to_player_' + myRoomCode);
+                if (raw) {
+                    let msg = JSON.parse(raw);
+                    if (msg.target && msg.target !== playerUUID) return;
+
                     if (msg.type === 'gameStarted') {
                         document.getElementById('waiting-room').style.display = 'none';
                         document.getElementById('game-screen').style.display = 'block';
-                    } else if (msg.type === 'nextQuestion' && msg.target === playerUUID) {
+                    } else if (msg.type === 'nextQuestion') {
                         displayQuestion(msg);
-                    } else if (msg.type === 'coinResult' && msg.target === playerUUID) {
+                    } else if (msg.type === 'coinResult') {
                         displayAnimation(msg);
                     } else if (msg.type === 'gameOver') {
+                        clearInterval(listenInterval);
                         let w = msg.winner || {name: "Nobody", coins: 0};
                         document.getElementById('game-screen').style.display = 'none';
                         document.getElementById('game-over-screen').style.display = 'block';
                         document.getElementById('final-winner-text').innerText = `🏆 Final Winner: ${w.name}`;
                         document.getElementById('final-coins-text').innerHTML = `Total Bank: 🪙 <b>${w.coins}</b> coins!`;
                     }
-                } catch(e) {}
-            };
-
-            setTimeout(() => {
-                sendDataToServer({ type: 'joinRequest', name: myName, sender: playerUUID });
+                }
             }, 500);
         }
 
         function sendDataToServer(data) {
-            fetch(`https://nodeflux.org{myRoomCode}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
+            localStorage.setItem('blooket_player_to_host_' + myRoomCode, JSON.stringify(data));
         }
 
         function displayQuestion(data) {
@@ -152,4 +148,5 @@
     </script>
 </body>
 </html>
+
 
