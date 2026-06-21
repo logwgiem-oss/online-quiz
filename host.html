@@ -29,6 +29,7 @@
         </div>
     </div>
     <script>
+        // FIX: Generated the room code FIRST so it is ready before anything else runs!
         let myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
         let hostState = { players: {}, roundActive: false, timeLeft: 300, timerId: null };
         let eventSource;
@@ -49,8 +50,10 @@
         ];
 
         window.onload = function() {
+            // Display the room code right away when the page visual loads
             document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
             
+            // Connect to the free messaging network
             eventSource = new EventSource(`https://nodeflux.org{myRoomCode}`);
             eventSource.onmessage = function(event) {
                 try {
@@ -139,6 +142,7 @@
     </script>
 </body>
 </html>
+
 
 
 
