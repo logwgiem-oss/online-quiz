@@ -31,7 +31,7 @@
     <script>
         let myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
         let hostState = { players: {}, roundActive: false, timeLeft: 300, timerId: null };
-        let pollTimer, lastMsgTime = Math.floor(Date.now() / 1000);
+        let socket;
 
         const questions = [
             { q: "What is the capital of France?", c: ["London", "Paris", "Rome", "Berlin"], a: "2" },
@@ -51,38 +51,25 @@
         window.onload = function() {
             document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
             
-            // FIX: Added 'since=' parameter so it ignores old data trash packets
-            pollTimer = setInterval(() => {
-                fetch(`https://ntfy.sh{myRoomCode}/json?since=${lastMsgTime}`)
-                .then(res => res.text())
-                .then(text => {
-                    if (!text.trim()) return;
-                    let lines = text.trim().split('\n');
-                    lines.forEach(line => {
-                        try {
-                            let serverRaw = JSON.parse(line);
-                            if (serverRaw.time > lastMsgTime) lastMsgTime = serverRaw.time;
-                            let msg = JSON.parse(serverRaw.message);
-                            
-                            if (msg.type === 'joinRequest') {
-                                hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
-                                updateHostLeaderboard();
-                            } else if (msg.type === 'submitAnswer') {
-                                handlePlayerAnswer(msg.sender, msg.guess, msg.correctIndex);
-                            } else if (msg.type === 'requestNextQuestion') {
-                                sendQuestionToSinglePlayer(msg.sender);
-                            }
-                        } catch(err) {}
-                    });
-                }).catch(e => {});
-            }, 1000);
+            socket = new WebSocket(`wss://://piesocket.com{myRoomCode}?api_key=VCXCEuvK86mN7w76D0CUw4G6O496BWI0us679X8b&notify_self=0`);
+            
+            socket.onmessage = function(event) {
+                let msg = JSON.parse(event.data);
+                if (msg.type === 'joinRequest') {
+                    hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
+                    updateHostLeaderboard();
+                } else if (msg.type === 'submitAnswer') {
+                    handlePlayerAnswer(msg.sender, msg.guess, msg.correctIndex);
+                } else if (msg.type === 'requestNextQuestion') {
+                    sendQuestionToSinglePlayer(msg.sender);
+                }
+            };
         };
 
         function sendBroadcast(data) {
-            fetch(`https://ntfy.sh{myRoomCode}`, {
-                method: 'POST',
-                body: JSON.stringify(data)
-            });
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify(data));
+            }
         }
 
         function updateHostLeaderboard() {
@@ -142,14 +129,14 @@
 
         function hostEndGame() {
             clearInterval(hostState.timerId);
-            clearInterval(pollTimer);
             let sorted = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
-            sendBroadcast({ type: 'gameOver', winner: sorted });
-            alert("Game Over! Winner listed on player screens.");
+            let winner = sorted[0] || { name: "Nobody", coins: 0 };
+            sendBroadcast({ type: 'gameOver', winnerName: winner.name, winnerCoins: winner.coins });
         }
     </script>
 </body>
 </html>
+
 
 
 
