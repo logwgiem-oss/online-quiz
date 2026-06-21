@@ -3,7 +3,6 @@
 <head>
     <title>Blooket Master Host</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://unpkg.com"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #0f172a; color: #fff; }
         .box { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 600px; margin: 20px auto; }
@@ -30,9 +29,10 @@
         </div>
     </div>
     <script>
+        // Generated instantly using local Math protocols so it NEVER fails to draw
         let myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
         let hostState = { players: {}, roundActive: false, timeLeft: 300, timerId: null };
-        let client;
+        let pollTimer;
 
         const questions = [
             { q: "What is the capital of France?", c: ["London", "Paris", "Rome", "Berlin"], a: "2" },
@@ -52,34 +52,43 @@
         window.onload = function() {
             document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
             
-            client = mqtt.connect('wss://://hivemq.com');
-            
-            client.on('connect', function () {
-                client.subscribe('blooket_quiz_room_' + myRoomCode);
-            });
-
-            client.on('message', function (topic, payload) {
-                let msg = JSON.parse(payload.toString());
-                
-                if (msg.type === 'joinRequest') {
-                    hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
-                    updateHostLeaderboard();
-                } else if (msg.type === 'submitAnswer') {
-                    handlePlayerAnswer(msg.sender, msg.guess, msg.correctIndex);
-                } else if (msg.type === 'requestNextQuestion') {
-                    sendQuestionToSinglePlayer(msg.sender);
-                }
-            });
+            // Infinite native browser monitoring sync loop
+            pollTimer = setInterval(() => {
+                fetch(`https://ntfy.sh{myRoomCode}/json?poll=1`)
+                .then(res => res.text())
+                .then(text => {
+                    if (!text.trim()) return;
+                    let lines = text.trim().split('\n');
+                    lines.forEach(line => {
+                        try {
+                            let serverRaw = JSON.parse(line);
+                            let msg = JSON.parse(serverRaw.message);
+                            
+                            if (msg.type === 'joinRequest') {
+                                hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
+                                updateHostLeaderboard();
+                            } else if (msg.type === 'submitAnswer') {
+                                handlePlayerAnswer(msg.sender, msg.guess, msg.correctIndex);
+                            } else if (msg.type === 'requestNextQuestion') {
+                                sendQuestionToSinglePlayer(msg.sender);
+                            }
+                        } catch(err) {}
+                    });
+                }).catch(e => {});
+            }, 1000);
         };
 
         function sendBroadcast(data) {
-            client.publish('blooket_quiz_room_' + myRoomCode, JSON.stringify(data));
+            fetch(`https://ntfy.sh{myRoomCode}`, {
+                method: 'POST',
+                body: JSON.stringify(data)
+            });
         }
 
         function updateHostLeaderboard() {
             const board = document.getElementById('leaderboard');
             let pList = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
-            if (pList.length === 0) { board.innerHTML = "Lobby empty. Waiting for players... Ready"; return; }
+            if (pList.length === 0) { board.innerHTML = "Lobby empty. Waiting for players..."; return; }
             board.innerHTML = pList.map((p, i) => `<div class="player-badge">#${i+1} ${p.name}: 🪙 ${p.coins}</div>`).join('');
         }
 
@@ -133,6 +142,7 @@
 
         function hostEndGame() {
             clearInterval(hostState.timerId);
+            clearInterval(pollTimer);
             let sorted = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
             sendBroadcast({ type: 'gameOver', winner: sorted });
             alert("Game Over! Winner listed on player screens.");
@@ -140,6 +150,7 @@
     </script>
 </body>
 </html>
+
 
 
 
