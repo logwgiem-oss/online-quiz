@@ -3,7 +3,6 @@
 <head>
     <title>Blooket Player Room</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://jsdelivr.net"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #f8fafc; color: #1e293b; }
         .container { max-width: 500px; margin: auto; }
@@ -36,7 +35,7 @@
             <p>Waiting for the host to press Launch...</p>
         </div>
         <div id="game-screen" style="display:none;">
-            <h2 id="question-text" style="color: #1e293b; margin-bottom: 20px;">Loading...</h2>
+            <h2 id="question-text" style="color: #1e293b; margin-bottom: 20px;">Loading question...</h2>
             <div id="reward-zone">
                 <h3 id="spin-status">Spinning Wheel...</h3>
                 <div id="lucky-wheel" class="wheel-box">?</div>
@@ -58,14 +57,8 @@
         </div>
     </div>
     <script>
-        const supabaseUrl = "https://supabase.co";
-        const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94d3VuYnNoZmJlanFpZG92cGZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTg5NjEwMDAsImV4cCI6MjAzNDUyMTAwMH0.1_K8X5h8pL4A7V_u24_uD-8V4A7V_u24_uD-8V4A7V_u";
-        
-        // FIX: Changed variable name to supabaseDb so it doesn't break the script loader
-        const supabaseDb = window.supabase.createClient(supabaseUrl, supabaseKey);
-        
         let playerUUID = 'user_' + Math.random().toString(36).substring(2, 7);
-        let myRoomCode = "", myName = "", currentCorrectIndex = "", gameChannel;
+        let myRoomCode = "", myName = "", currentCorrectIndex = "", eventSource;
         const visualPrizes = ["🪙 Coins", "🚨 Steal!", "🔄 Swap", "💥 Triple!"];
 
         function joinLobby() {
@@ -76,30 +69,39 @@
             document.getElementById('login-screen').style.display = 'none';
             document.getElementById('waiting-room').style.display = 'block';
             
-            gameChannel = supabaseDb.channel(myRoomCode);
-            gameChannel.on('broadcast', { event: 'quiz' }, (payload) => {
-                let msg = payload.payload;
-                if (msg.type === 'gameStarted') {
-                    document.getElementById('waiting-room').style.display = 'none';
-                    document.getElementById('game-screen').style.display = 'block';
-                } else if (msg.type === 'nextQuestion' && msg.target === playerUUID) {
-                    displayQuestion(msg);
-                } else if (msg.type === 'coinResult' && msg.target === playerUUID) {
-                    displayAnimation(msg);
-                } else if (msg.type === 'gameOver') {
-                    let w = msg.winner || {name: "Nobody", coins: 0};
-                    document.getElementById('game-screen').style.display = 'none';
-                    document.getElementById('game-over-screen').style.display = 'block';
-                    document.getElementById('final-winner-text').innerText = `🏆 Final Winner: ${w.name}`;
-                    document.getElementById('final-coins-text').innerHTML = `Total Bank: 🪙 <b>${w.coins}</b> coins!`;
+            eventSource = new EventSource(`https://ntfy.sh{myRoomCode}/sse`);
+            
+            eventSource.onmessage = function(event) {
+                try {
+                    let msg = JSON.parse(event.data);
+                    if (msg.type === 'gameStarted') {
+                        document.getElementById('waiting-room').style.display = 'none';
+                        document.getElementById('game-screen').style.display = 'block';
+                    } else if (msg.type === 'nextQuestion' && msg.target === playerUUID) {
+                        displayQuestion(msg);
+                    } else if (msg.type === 'coinResult' && msg.target === playerUUID) {
+                        displayAnimation(msg);
+                    } else if (msg.type === 'gameOver') {
+                        let w = msg.winner || {name: "Nobody", coins: 0};
+                        document.getElementById('game-screen').style.display = 'none';
+                        document.getElementById('game-over-screen').style.display = 'block';
+                        document.getElementById('final-winner-text').innerText = `🏆 Final Winner: ${w.name}`;
+                        document.getElementById('final-coins-text').innerHTML = `Total Bank: 🪙 <b>${w.coins}</b> coins!`;
+                    }
+                } catch(e) {
+                    // Ignore empty system test signals from network
                 }
-            }).subscribe((status) => {
-                if (status === 'SUBSCRIBED') {
-                    gameChannel.send({
-                        type: 'broadcast', event: 'quiz',
-                        payload: { type: 'joinRequest', name: myName, sender: playerUUID }
-                    });
-                }
+            };
+
+            setTimeout(() => {
+                sendDataToServer({ type: 'joinRequest', name: myName, sender: playerUUID });
+            }, 500);
+        }
+
+        function sendDataToServer(data) {
+            fetch(`https://ntfy.sh{myRoomCode}`, {
+                method: 'POST',
+                body: JSON.stringify(data)
             });
         }
 
@@ -118,17 +120,11 @@
 
         function pick(choiceNum) {
             document.getElementById('button-grid').style.pointerEvents = 'none';
-            gameChannel.send({
-                type: 'broadcast', event: 'quiz',
-                payload: { type: 'submitAnswer', guess: choiceNum, correctIndex: currentCorrectIndex, sender: playerUUID }
-            });
+            sendDataToServer({ type: 'submitAnswer', guess: choiceNum, correctIndex: currentCorrectIndex, sender: playerUUID });
         }
 
         function getNextQuestion() {
-            gameChannel.send({
-                type: 'broadcast', event: 'quiz',
-                payload: { type: 'requestNextQuestion', sender: playerUUID }
-            });
+            sendDataToServer({ type: 'requestNextQuestion', sender: playerUUID });
         }
 
         function displayAnimation(data) {
