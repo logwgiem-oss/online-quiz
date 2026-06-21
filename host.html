@@ -29,10 +29,9 @@
         </div>
     </div>
     <script>
-        // Generated instantly using local Math protocols so it NEVER fails to draw
         let myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
         let hostState = { players: {}, roundActive: false, timeLeft: 300, timerId: null };
-        let pollTimer;
+        let pollTimer, lastMsgTime = Math.floor(Date.now() / 1000);
 
         const questions = [
             { q: "What is the capital of France?", c: ["London", "Paris", "Rome", "Berlin"], a: "2" },
@@ -52,9 +51,9 @@
         window.onload = function() {
             document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
             
-            // Infinite native browser monitoring sync loop
+            // FIX: Added 'since=' parameter so it ignores old data trash packets
             pollTimer = setInterval(() => {
-                fetch(`https://ntfy.sh{myRoomCode}/json?poll=1`)
+                fetch(`https://ntfy.sh{myRoomCode}/json?since=${lastMsgTime}`)
                 .then(res => res.text())
                 .then(text => {
                     if (!text.trim()) return;
@@ -62,6 +61,7 @@
                     lines.forEach(line => {
                         try {
                             let serverRaw = JSON.parse(line);
+                            if (serverRaw.time > lastMsgTime) lastMsgTime = serverRaw.time;
                             let msg = JSON.parse(serverRaw.message);
                             
                             if (msg.type === 'joinRequest') {
