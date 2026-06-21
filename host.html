@@ -51,11 +51,13 @@
         window.onload = function() {
             document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
             
-            // Connect to unblockable open web connection pipeline
-            ws = new WebSocket(`wss://api.tinode.co/v0/channels/blooket_game_${myRoomCode}`);
+            // Connect to the free public cloud lane pipeline
+            ws = new WebSocket(`wss://free.echo.websocket.org`);
             
             ws.onmessage = function(event) {
                 let msg = JSON.parse(event.data);
+                if (msg.room !== myRoomCode) return;
+
                 if (msg.type === 'joinRequest') {
                     hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
                     updateHostLeaderboard();
@@ -83,7 +85,7 @@
         function hostStartGame() {
             if (hostState.roundActive) return;
             hostState.roundActive = true;
-            sendBroadcast({ type: 'gameStarted' });
+            sendBroadcast({ type: 'gameStarted', room: myRoomCode });
             setTimeout(() => {
                 Object.keys(hostState.players).forEach(uuid => { sendQuestionToSinglePlayer(uuid); });
             }, 400);
@@ -99,7 +101,7 @@
 
         function sendQuestionToSinglePlayer(uuid) {
             let rand = Math.floor(Math.random() * questions.length);
-            sendBroadcast({ type: 'nextQuestion', target: uuid, q: questions[rand].q, choices: questions[rand].c, correct: questions[rand].a });
+            sendBroadcast({ type: 'nextQuestion', target: uuid, q: questions[rand].q, choices: questions[rand].c, correct: questions[rand].a, room: myRoomCode });
         }
 
         function handlePlayerAnswer(uuid, guess, correctIndex) {
@@ -123,8 +125,8 @@
                         outcome = { type: "swap", display: "🔄 COIN SWAP", msg: `🔄 SWAPPED banks with ${victim.name}!` };
                     } else { player.coins += 40; outcome = { type: "coins", display: "🪙 +40 Coins", msg: `Gained +🪙 40 Coins!` }; }
                 } else { player.coins *= 3; outcome = { type: "triple", display: "💥 TRIPLE!!!", msg: `💥 TRIPLE COINS JACKPOT!!!` }; }
-                sendBroadcast({ type: 'coinResult', target: uuid, success: true, reward: outcome });
-            } else { sendBroadcast({ type: 'coinResult', target: uuid, success: false }); }
+                sendBroadcast({ type: 'coinResult', target: uuid, success: true, reward: outcome, room: myRoomCode });
+            } else { sendBroadcast({ type: 'coinResult', target: uuid, success: false, room: myRoomCode }); }
             updateHostLeaderboard();
         }
 
@@ -132,11 +134,12 @@
             clearInterval(hostState.timerId);
             let sorted = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
             let winner = sorted[0] || { name: "Nobody", coins: 0 };
-            sendBroadcast({ type: 'gameOver', winnerName: winner.name, winnerCoins: winner.coins });
+            sendBroadcast({ type: 'gameOver', winnerName: winner.name, winnerCoins: winner.coins, room: myRoomCode });
         }
     </script>
 </body>
 </html>
+
 
 
 
