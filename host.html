@@ -3,6 +3,7 @@
 <head>
     <title>Blooket Master Host</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://jsdelivr.net"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #0f172a; color: #fff; }
         .box { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 600px; margin: 20px auto; }
@@ -30,8 +31,8 @@
     </div>
     <script>
         let myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
-        let hostState = { players: {}, roundActive: false, timeLeft: 300, timerId: null };
-        let loopInterval;
+        let hostState = { players: {}, connections: {}, roundActive: false, timeLeft: 300, timerId: null };
+        let peer;
 
         const questions = [
             { q: "What is the capital of France?", c: ["London", "Paris", "Rome", "Berlin"], a: "2" },
@@ -51,37 +52,23 @@
         window.onload = function() {
             document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
             
-            // Loop checker that avoids browser blockages completely
-            loopInterval = setInterval(() => {
-                fetch(`https://allorigins.win{encodeURIComponent('https://ntfy.sh_' + myRoomCode + '/json?poll=1')}`)
-                .then(res => res.json())
-                .then(data => {
-                    let lines = data.contents.trim().split('\n');
-                    lines.forEach(line => {
-                        if(!line) return;
-                        let serverRaw = JSON.parse(line);
-                        if(!serverRaw.message) return;
-                        let msg = JSON.parse(serverRaw.message);
-                        
-                        if (msg.type === 'joinRequest') {
-                            hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
-                            updateHostLeaderboard();
-                        } else if (msg.type === 'submitAnswer') {
-                            handlePlayerAnswer(msg.sender, msg.guess, msg.correctIndex);
-                        } else if (msg.type === 'requestNextQuestion') {
-                            sendQuestionToSinglePlayer(msg.sender);
-                        }
-                    });
-                }).catch(e => {});
-            }, 1500);
-        };
-
-        function sendBroadcast(data) {
-            fetch(`https://ntfy.sh_${myRoomCode}`, {
-                method: 'POST',
-                body: JSON.stringify(data)
+            // Set up a secure Peer link for this exact room code session
+            peer = new Peer('BLOOKET_ROOM_' + myRoomCode);
+            
+            peer.on('connection', function(conn) {
+                conn.on('data', function(data) {
+                    if (data.type === 'joinRequest') {
+                        hostState.players[conn.peer] = { id: conn.peer, name: data.name, coins: 100 };
+                        hostState.connections[conn.peer] = conn;
+                        updateHostLeaderboard();
+                    } else if (data.type === 'submitAnswer') {
+                        handlePlayerAnswer(conn.peer, data.guess, data.correctIndex);
+                    } else if (data.type === 'requestNextQuestion') {
+                        sendQuestionToSinglePlayer(conn.peer);
+                    }
+                });
             });
-        }
+        };
 
         function updateHostLeaderboard() {
             const board = document.getElementById('leaderboard');
@@ -93,28 +80,36 @@
         function hostStartGame() {
             if (hostState.roundActive) return;
             hostState.roundActive = true;
-            sendBroadcast({ type: 'gameStarted' });
-            setTimeout(() => {
-                Object.keys(hostState.players).forEach(uuid => { sendQuestionToSinglePlayer(uuid); });
-            }, 400);
+            
+            Object.values(hostState.connections).forEach(conn => {
+                conn.send({ type: 'gameStarted' });
+            });
+            
+            Object.keys(hostState.players).forEach(uuid => { sendQuestionToSinglePlayer(uuid); });
             
             hostState.timerId = setInterval(() => {
                 hostState.timeLeft--;
                 let mins = Math.floor(hostState.timeLeft / 60), secs = hostState.timeLeft % 60;
                 document.getElementById('timer-display').innerText = `${mins}:${secs < 10 ? '0'+secs : secs}`;
-                sendBroadcast({ type: 'timerUpdate', time: hostState.timeLeft });
+                
                 if (hostState.timeLeft <= 0) { hostEndGame(); }
             }, 1000);
         }
 
         function sendQuestionToSinglePlayer(uuid) {
             let rand = Math.floor(Math.random() * questions.length);
-            sendBroadcast({ type: 'nextQuestion', target: uuid, q: questions[rand].q, choices: questions[rand].c, correct: questions[rand].a });
+            let conn = hostState.connections[uuid];
+            if (conn) {
+                conn.send({ type: 'nextQuestion', q: questions[rand].q, choices: questions[rand].c, correct: questions[rand].a });
+            }
         }
 
         function handlePlayerAnswer(uuid, guess, correctIndex) {
             if (!hostState.roundActive || !hostState.players[uuid]) return;
             let player = hostState.players[uuid];
+            let conn = hostState.connections[uuid];
+            if (!conn) return;
+
             if (guess === correctIndex) {
                 let roll = Math.floor(Math.random() * 4), outcome = {};
                 if (roll === 0) {
@@ -133,18 +128,24 @@
                         outcome = { type: "swap", display: "🔄 COIN SWAP", msg: `🔄 SWAPPED banks with ${victim.name}!` };
                     } else { player.coins += 40; outcome = { type: "coins", display: "🪙 +40 Coins", msg: `Gained +🪙 40 Coins!` }; }
                 } else { player.coins *= 3; outcome = { type: "triple", display: "💥 TRIPLE!!!", msg: `💥 TRIPLE COINS JACKPOT!!!` }; }
-                sendBroadcast({ type: 'coinResult', target: uuid, success: true, reward: outcome });
-            } else { sendBroadcast({ type: 'coinResult', target: uuid, success: false }); }
+                
+                conn.send({ type: 'coinResult', success: true, reward: outcome });
+            } else { 
+                conn.send({ type: 'coinResult', success: false }); 
+            }
             updateHostLeaderboard();
         }
 
         function hostEndGame() {
             clearInterval(hostState.timerId);
-            clearInterval(loopInterval);
             let sorted = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
-            sendBroadcast({ type: 'gameOver', winner: sorted });
+            Object.values(hostState.connections).forEach(conn => {
+                conn.send({ type: 'gameOver', winner: sorted[0] });
+            });
+            alert("Game Over! Winner listed on player screens.");
         }
     </script>
 </body>
 </html>
+
 
