@@ -63,17 +63,15 @@
             document.getElementById('login-screen').style.display = 'none';
             document.getElementById('waiting-room').style.display = 'block';
             
-            // Connect to an open, free, unblocked server lane link
-            ws = new WebSocket(`wss://free.echo.websocket.org`);
+            // Connect to an open, broadcasting public channel room (VCXCEuvK86mN7w76D0CUw4G6O496BWI0us679X8b)
+            ws = new WebSocket(`wss://://piesocket.com{myRoomCode}?api_key=VCXCEuvK86mN7w76D0CUw4G6O496BWI0us679X8b&notify_self=1`);
             
             ws.onopen = function() {
-                sendMsg({ type: 'joinRequest', name: myName, sender: playerUUID, room: myRoomCode });
+                sendMsg({ type: 'joinRequest', name: myName, sender: playerUUID });
             };
 
             ws.onmessage = function(event) {
                 let msg = JSON.parse(event.data);
-                // Filter messages so you only listen to your custom room code channel
-                if (msg.room !== myRoomCode) return;
 
                 if (msg.type === 'gameStarted') {
                     document.getElementById('waiting-room').style.display = 'none';
@@ -100,10 +98,6 @@
             }
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            const visualPrizes = ["🪙 Coins", "🚨 Steal!", "🔄 Swap", "💥 Triple!"];
-        });
-
         function displayQuestion(data) {
             currentCorrectIndex = data.correct;
             document.getElementById('button-grid').style.display = 'grid';
@@ -120,11 +114,11 @@
 
         function pick(choiceNum) {
             document.getElementById('button-grid').style.pointerEvents = 'none';
-            sendMsg({ type: 'submitAnswer', guess: choiceNum, correctIndex: currentCorrectIndex, sender: playerUUID, room: myRoomCode });
+            sendMsg({ type: 'submitAnswer', guess: choiceNum, correctIndex: currentCorrectIndex, sender: playerUUID });
         }
 
         function getNextQuestion() {
-            sendMsg({ type: 'requestNextQuestion', sender: playerUUID, room: myRoomCode });
+            sendMsg({ type: 'requestNextQuestion', sender: playerUUID });
         }
 
         function displayAnimation(data) {
@@ -152,6 +146,7 @@
     </script>
 </body>
 </html>
+
 
 
 
