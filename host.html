@@ -54,7 +54,10 @@
             eventSource = new EventSource(`https://ntfy.sh{myRoomCode}/sse`);
             eventSource.onmessage = function(event) {
                 try {
-                    let msg = JSON.parse(event.data);
+                    let serverRaw = JSON.parse(event.data);
+                    // Unpack ntfy system text string wrapper
+                    let msg = JSON.parse(serverRaw.message);
+                    
                     if (msg.type === 'joinRequest') {
                         hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
                         updateHostLeaderboard();
@@ -64,7 +67,7 @@
                         sendQuestionToSinglePlayer(msg.sender);
                     }
                 } catch(e) {
-                    // Ignore empty system test signals from network
+                    // Skips default system network text packets safely
                 }
             };
         };
@@ -79,7 +82,7 @@
         function updateHostLeaderboard() {
             const board = document.getElementById('leaderboard');
             let pList = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
-            if (pList.length === 0) { board.innerHTML = "Lobby empty. Waiting for players..."; return; }
+            if (pList.length === 0) { board.innerHTML = "Lobby empty. Waiting for players... Russo"; return; }
             board.innerHTML = pList.map((p, i) => `<div class="player-badge">#${i+1} ${p.name}: 🪙 ${p.coins}</div>`).join('');
         }
 
@@ -87,7 +90,10 @@
             if (hostState.roundActive) return;
             hostState.roundActive = true;
             sendBroadcast({ type: 'gameStarted' });
-            Object.keys(hostState.players).forEach(uuid => { sendQuestionToSinglePlayer(uuid); });
+            setTimeout(() => {
+                Object.keys(hostState.players).forEach(uuid => { sendQuestionToSinglePlayer(uuid); });
+            }, 400);
+            
             hostState.timerId = setInterval(() => {
                 hostState.timeLeft--;
                 let mins = Math.floor(hostState.timeLeft / 60), secs = hostState.timeLeft % 60;
@@ -132,10 +138,8 @@
             clearInterval(hostState.timerId);
             let sorted = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
             sendBroadcast({ type: 'gameOver', winner: sorted });
-            alert("Game Over! Winner listed on player screens.");
         }
     </script>
 </body>
 </html>
-
 
