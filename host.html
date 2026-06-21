@@ -3,7 +3,6 @@
 <head>
     <title>Blooket Master Host</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://cloudflare.com"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #0f172a; color: #fff; }
         .box { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 600px; margin: 20px auto; }
@@ -32,7 +31,7 @@
     <script>
         let myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
         let hostState = { players: {}, roundActive: false, timeLeft: 300, timerId: null };
-        let drone, room;
+        let ws;
 
         const questions = [
             { q: "What is the capital of France?", c: ["London", "Paris", "Rome", "Berlin"], a: "2" },
@@ -52,30 +51,26 @@
         window.onload = function() {
             document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
             
-            drone = new ScaleDrone('7T79F7vOsh9K3w1f');
+            // Connect to unblockable open web connection pipeline
+            ws = new WebSocket(`wss://api.tinode.co/v0/channels/blooket_game_${myRoomCode}`);
             
-            drone.on('open', error => {
-                if (error) return console.error(error);
-                room = drone.subscribe('room_' + myRoomCode);
-                
-                room.on('data', msg => {
-                    if (msg.type === 'joinRequest') {
-                        hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
-                        updateHostLeaderboard();
-                    } else if (msg.type === 'submitAnswer') {
-                        handlePlayerAnswer(msg.sender, msg.guess, msg.correctIndex);
-                    } else if (msg.type === 'requestNextQuestion') {
-                        sendQuestionToSinglePlayer(msg.sender);
-                    }
-                });
-            });
+            ws.onmessage = function(event) {
+                let msg = JSON.parse(event.data);
+                if (msg.type === 'joinRequest') {
+                    hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
+                    updateHostLeaderboard();
+                } else if (msg.type === 'submitAnswer') {
+                    handlePlayerAnswer(msg.sender, msg.guess, msg.correctIndex);
+                } else if (msg.type === 'requestNextQuestion') {
+                    sendQuestionToSinglePlayer(msg.sender);
+                }
+            };
         };
 
         function sendBroadcast(data) {
-            drone.publish({
-                room: 'room_' + myRoomCode,
-                message: data
-            });
+            if (ws && ws.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify(data));
+            }
         }
 
         function updateHostLeaderboard() {
@@ -142,6 +137,7 @@
     </script>
 </body>
 </html>
+
 
 
 
