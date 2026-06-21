@@ -56,7 +56,7 @@
             
             drone.on('open', error => {
                 if (error) return console.error(error);
-                room = drone.subscribe('observable-room-' + myRoomCode);
+                room = drone.subscribe('room_' + myRoomCode);
                 
                 room.on('data', msg => {
                     if (msg.type === 'joinRequest') {
@@ -73,7 +73,7 @@
 
         function sendBroadcast(data) {
             drone.publish({
-                room: 'observable-room-' + myRoomCode,
+                room: 'room_' + myRoomCode,
                 message: data
             });
         }
@@ -142,12 +142,6 @@
     </script>
 </body>
 </html>
-
-
-
-
-
-
 
 
 
