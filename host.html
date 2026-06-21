@@ -29,10 +29,9 @@
         </div>
     </div>
     <script>
-        // FIX: Generated the room code FIRST so it is ready before anything else runs!
         let myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
         let hostState = { players: {}, roundActive: false, timeLeft: 300, timerId: null };
-        let eventSource;
+        let listenInterval;
 
         const questions = [
             { q: "What is the capital of France?", c: ["London", "Paris", "Rome", "Berlin"], a: "2" },
@@ -50,14 +49,15 @@
         ];
 
         window.onload = function() {
-            // Display the room code right away when the page visual loads
+            // FIX: Forces the 4-letter room code to show up immediately on load with no external lags
             document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
             
-            // Connect to the free messaging network
-            eventSource = new EventSource(`https://nodeflux.org{myRoomCode}`);
-            eventSource.onmessage = function(event) {
-                try {
-                    let msg = JSON.parse(event.data);
+            listenInterval = setInterval(() => {
+                let raw = localStorage.getItem('blooket_player_to_host_' + myRoomCode);
+                if (raw) {
+                    let msg = JSON.parse(raw);
+                    localStorage.removeItem('blooket_player_to_host_' + myRoomCode); // Clear read flag
+                    
                     if (msg.type === 'joinRequest') {
                         hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
                         updateHostLeaderboard();
@@ -66,16 +66,12 @@
                     } else if (msg.type === 'requestNextQuestion') {
                         sendQuestionToSinglePlayer(msg.sender);
                     }
-                } catch(e) {}
-            };
+                }
+            }, 500);
         };
 
         function sendBroadcast(data) {
-            fetch(`https://nodeflux.org{myRoomCode}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(data)
-            });
+            localStorage.setItem('blooket_host_to_player_' + myRoomCode, JSON.stringify(data));
         }
 
         function updateHostLeaderboard() {
@@ -135,6 +131,7 @@
 
         function hostEndGame() {
             clearInterval(hostState.timerId);
+            clearInterval(listenInterval);
             let sorted = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
             sendBroadcast({ type: 'gameOver', winner: sorted });
             alert("Game Over! Winner listed on player screens.");
@@ -142,6 +139,7 @@
     </script>
 </body>
 </html>
+
 
 
 
