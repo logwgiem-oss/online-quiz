@@ -49,16 +49,10 @@
             </div>
             <button id="next-btn" class="btn" style="display:none; background:#3b82f6; margin-top:20px;" onclick="getNextQuestion()">CONTINUE ➡️</button>
         </div>
-        <div id="game-over-screen" style="display:none;">
-            <h1 style="font-size:36px; color:#1e293b;">⏰ TIME UP!</h1>
-            <hr>
-            <h2 id="final-winner-text">🏆 Final Winner: Nobody</h2>
-            <p id="final-coins-text" style="font-size:22px; color:#f59e0b;">Total Bank: 🪙 <b>0</b> coins!</p>
-        </div>
     </div>
     <script>
         let playerUUID = 'user_' + Math.random().toString(36).substring(2, 7);
-        let myRoomCode = "", myName = "", currentCorrectIndex = "", pollTimer, lastMsgTime = Math.floor(Date.now() / 1000);
+        let myRoomCode = "", myName = "", currentCorrectIndex = "", socket;
         const visualPrizes = ["🪙 Coins", "🚨 Steal!", "🔄 Swap", "💥 Triple!"];
 
         function joinLobby() {
@@ -69,47 +63,39 @@
             document.getElementById('login-screen').style.display = 'none';
             document.getElementById('waiting-room').style.display = 'block';
             
-            // FIX: Added 'since=' parameter so it ignores all yesterday's test history packets
-            pollTimer = setInterval(() => {
-                fetch(`https://ntfy.sh{myRoomCode}/json?since=${lastMsgTime}`)
-                .then(res => res.text())
-                .then(text => {
-                    if (!text.trim()) return;
-                    let lines = text.trim().split('\n');
-                    lines.forEach(line => {
-                        try {
-                            let serverRaw = JSON.parse(line);
-                            if (serverRaw.time > lastMsgTime) lastMsgTime = serverRaw.time;
-                            let msg = JSON.parse(serverRaw.message);
-                            
-                            if (msg.type === 'gameStarted') {
-                                document.getElementById('waiting-room').style.display = 'none';
-                                document.getElementById('game-screen').style.display = 'block';
-                            } else if (msg.type === 'nextQuestion' && msg.target === playerUUID) {
-                                displayQuestion(msg);
-                            } else if (msg.type === 'coinResult' && msg.target === playerUUID) {
-                                displayAnimation(msg);
-                            } else if (msg.type === 'gameOver') {
-                                clearInterval(pollTimer);
-                                let w = msg.winner || {name: "Nobody", coins: 0};
-                                document.getElementById('game-screen').style.display = 'none';
-                                document.getElementById('game-over-screen').style.display = 'block';
-                                document.getElementById('final-winner-text').innerText = `🏆 Final Winner: ${w.name}`;
-                                document.getElementById('final-coins-text').innerHTML = `Total Bank: 🪙 <b>${w.coins}</b> coins!`;
-                            }
-                        } catch(err) {}
-                    });
-                }).catch(e => {});
-            }, 1000);
+            // Connect to PieSocket free cluster road highway
+            socket = new WebSocket(`wss://://piesocket.com{myRoomCode}?api_key=VCXCEuvK86mN7w76D0CUw4G6O496BWI0us679X8b&notify_self=0`);
+            
+            socket.onopen = function() {
+                sendMsg({ type: 'joinRequest', name: myName, sender: playerUUID });
+            };
 
-            sendMsg({ type: 'joinRequest', name: myName, sender: playerUUID });
+            socket.onmessage = function(event) {
+                let msg = JSON.parse(event.data);
+                
+                if (msg.type === 'gameStarted') {
+                    document.getElementById('waiting-room').style.display = 'none';
+                    document.getElementById('game-screen').style.display = 'block';
+                } else if (msg.type === 'nextQuestion' && msg.target === playerUUID) {
+                    displayQuestion(msg);
+                } else if (msg.type === 'coinResult' && msg.target === playerUUID) {
+                    displayAnimation(msg);
+                } else if (msg.type === 'gameOver') {
+                    socket.close();
+                    document.getElementById('game-container').innerHTML = `
+                        <h1 style="font-size:36px; color:#1e293b;">⏰ TIME UP!</h1>
+                        <hr>
+                        <h2>🏆 Final Winner: ${msg.winnerName}</h2>
+                        <p style="font-size:22px; color:#f59e0b;">Total Bank: 🪙 <b>${msg.winnerCoins}</b> coins!</p>
+                    `;
+                }
+            };
         }
 
         function sendMsg(data) {
-            fetch(`https://ntfy.sh{myRoomCode}`, {
-                method: 'POST',
-                body: JSON.stringify(data)
-            });
+            if (socket.readyState === WebSocket.OPEN) {
+                socket.send(JSON.stringify(data));
+            }
         }
 
         function displayQuestion(data) {
@@ -159,6 +145,7 @@
     </script>
 </body>
 </html>
+
 
 
 
