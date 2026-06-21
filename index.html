@@ -36,11 +36,11 @@
             <p>Waiting for the host to press Launch...</p>
         </div>
         <div id="game-screen" style="display:none;">
-            <h2 id="question-text" style="color: #1e293b; margin-bottom: 20px;">Loading question...</h2>
+            <h2 id="question-text" style="color: #1e293b; margin-bottom: 20px;">Loading...</h2>
             <div id="reward-zone">
-                <h3 id="spin-status">Spinning the Blooket Wheel...</h3>
+                <h3 id="spin-status">Spinning Wheel...</h3>
                 <div id="lucky-wheel" class="wheel-box">?</div>
-                <div id="final-msg" style="margin-top: 15px; font-size: 18px;"></div>
+                <div id="final-msg" style="margin-top:15px; font-size:18px;"></div>
             </div>
             <div class="grid" id="button-grid">
                 <button id="b1" class="choice-btn red" onclick="pick('1')">---</button>
@@ -48,7 +48,7 @@
                 <button id="b3" class="choice-btn green" onclick="pick('3')">---</button>
                 <button id="b4" class="choice-btn yellow" onclick="pick('4')">---</button>
             </div>
-            <button id="next-btn" class="btn" style="display:none; background: #3b82f6; margin-top:20px;" onclick="getNextQuestion()">CONTINUE ➡️</button>
+            <button id="next-btn" class="btn" style="display:none; background:#3b82f6; margin-top:20px;" onclick="getNextQuestion()">CONTINUE ➡️</button>
         </div>
         <div id="game-over-screen" style="display:none;">
             <h1 style="font-size:36px; color:#1e293b;">⏰ TIME UP!</h1>
@@ -58,17 +58,13 @@
         </div>
     </div>
     <script>
-        let pubnub, playerUUID, myRoomCode = "", myName = "", currentCorrectIndex = "";
+        const supabaseUrl = "https://supabase.co";
+        const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94d3VuYnNoZmJlanFpZG92cGZmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3MTg5NjEwMDAsImV4cCI6MjAzNDUyMTAwMH0.1_K8X5h8pL4A7V_u24_uD-8V4A7V_u24_uD-8V4A7V_u";
+        const supabaseClient = supabase.createClient(supabaseUrl, supabaseKey);
+        
+        let playerUUID = 'user_' + Math.random().toString(36).substring(2, 7);
+        let myRoomCode = "", myName = "", currentCorrectIndex = "", gameChannel;
         const visualPrizes = ["🪙 Coins", "🚨 Steal!", "🔄 Swap", "💥 Triple!"];
-
-        window.onload = function() {
-            playerUUID = 'user_' + Math.random().toString(36).substring(2, 7);
-            pubnub = new PubNub({
-                publishKey: 'pub-c-cb6df64d-df7a-4288-9279-d5c64bf2bf7c',
-                subscribeKey: 'sub-c-572765ea-79f9-467f-94d7-b7fa1e97d819',
-                userId: playerUUID
-            });
-        };
 
         function joinLobby() {
             myRoomCode = document.getElementById('roomcode').value.trim().toUpperCase();
@@ -78,13 +74,9 @@
             document.getElementById('login-screen').style.display = 'none';
             document.getElementById('waiting-room').style.display = 'block';
             
-            // Set up channel listener structure using modern V11 specifications
-            const currentChannel = pubnub.channel(myRoomCode);
-            const mySubscription = currentChannel.subscription();
-            mySubscription.subscribe();
-            
-            mySubscription.onMessage = (event) => {
-                let msg = event.message;
+            gameChannel = supabaseClient.channel(myRoomCode);
+            gameChannel.on('broadcast', { event: 'quiz' }, (payload) => {
+                let msg = payload.payload;
                 if (msg.type === 'gameStarted') {
                     document.getElementById('waiting-room').style.display = 'none';
                     document.getElementById('game-screen').style.display = 'block';
@@ -99,15 +91,14 @@
                     document.getElementById('final-winner-text').innerText = `🏆 Final Winner: ${w.name}`;
                     document.getElementById('final-coins-text').innerHTML = `Total Bank: 🪙 <b>${w.coins}</b> coins!`;
                 }
-            };
-
-            // Allow the subscription channel open process to settle before triggering push
-            setTimeout(() => {
-                pubnub.publish({
-                    channel: myRoomCode,
-                    message: { type: 'joinRequest', name: myName, sender: playerUUID }
-                });
-            }, 600);
+            }).subscribe((status) => {
+                if (status === 'SUBSCRIBED') {
+                    gameChannel.send({
+                        type: 'broadcast', event: 'quiz',
+                        payload: { type: 'joinRequest', name: myName, sender: playerUUID }
+                    });
+                }
+            });
         }
 
         function displayQuestion(data) {
@@ -125,52 +116,41 @@
 
         function pick(choiceNum) {
             document.getElementById('button-grid').style.pointerEvents = 'none';
-            pubnub.publish({
-                channel: myRoomCode,
-                message: { type: 'submitAnswer', guess: choiceNum, correctIndex: currentCorrectIndex, sender: playerUUID }
+            gameChannel.send({
+                type: 'broadcast', event: 'quiz',
+                payload: { type: 'submitAnswer', guess: choiceNum, correctIndex: currentCorrectIndex, sender: playerUUID }
             });
         }
 
         function getNextQuestion() {
-            pubnub.publish({
-                channel: myRoomCode,
-                message: { type: 'requestNextQuestion', sender: playerUUID }
+            gameChannel.send({
+                type: 'broadcast', event: 'quiz',
+                payload: { type: 'requestNextQuestion', sender: playerUUID }
             });
         }
 
         function displayAnimation(data) {
             const grid = document.getElementById('button-grid'), rewardZone = document.getElementById('reward-zone'), wheel = document.getElementById('lucky-wheel'), status = document.getElementById('spin-status'), msgBox = document.getElementById('final-msg'), nextBtn = document.getElementById('next-btn');
-            grid.style.display = 'none';
-            rewardZone.style.display = 'block';
+            grid.style.display = 'none'; rewardZone.style.display = 'block';
             if (data.success) {
-                msgBox.innerText = "";
-                status.innerText = "✨ CORRECT ANSWER!";
-                wheel.classList.add('spinning');
+                msgBox.innerText = ""; status.innerText = "✨ CORRECT ANSWER!"; wheel.classList.add('spinning');
                 let shuffleTimer = setInterval(() => { wheel.innerText = visualPrizes[Math.floor(Math.random() * visualPrizes.length)]; }, 60);
                 setTimeout(() => {
-                    clearInterval(shuffleTimer);
-                    wheel.classList.remove('spinning');
-                    wheel.innerText = data.reward.display;
-                    msgBox.className = "win-gold";
-                    msgBox.innerText = data.reward.msg;
-                    nextBtn.style.display = 'block';
+                    clearInterval(shuffleTimer); wheel.classList.remove('spinning'); wheel.innerText = data.reward.display;
+                    msgBox.className = "win-gold"; msgBox.innerText = data.reward.msg; nextBtn.style.display = 'block';
                 }, 1200);
             } else {
-                wheel.innerText = "❌";
-                status.innerText = "INCORRECT!";
-                let penaltyTime = 3;
-                msgBox.className = "lose-gold";
+                wheel.innerText = "❌"; status.innerText = "INCORRECT!"; let penaltyTime = 3; msgBox.className = "lose-gold";
                 msgBox.innerHTML = `Wrong answer!<br><span class="cooldown-text">Locked out for ${penaltyTime}s...</span>`;
                 let cooldownInterval = setInterval(() => {
                     penaltyTime--;
                     if (penaltyTime > 0) { msgBox.innerHTML = `Wrong answer!<br><span class="cooldown-text">Locked out for ${penaltyTime}s...</span>`; }
                     else {
-                        clearInterval(cooldownInterval);
-                        rewardZone.style.display = 'none';
-                        grid.style.display = 'grid';
-                        grid.style.pointerEvents = 'auto';
+                        clearInterval(cooldownInterval); rewardZone.style.display = 'none'; grid.style.display = 'grid'; grid.style.pointerEvents = 'auto';
                     }
                 }, 1000);
             }
         }
-
+    </script>
+</body>
+</html>
