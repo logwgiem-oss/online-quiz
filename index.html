@@ -104,7 +104,7 @@
             document.getElementById('next-btn').style.display = 'none';
             document.getElementById('question-text').innerText = data.q;
             
-            // FIX: Added bracket index numbers so buttons read the choices perfectly
+            // FIX: Added explicit position trackers so text maps perfectly
             document.getElementById('b1').innerText = data.choices[0];
             document.getElementById('b2').innerText = data.choices[1];
             document.getElementById('b3').innerText = data.choices[2];
@@ -145,6 +145,7 @@
     </script>
 </body>
 </html>
+
 
 
 
