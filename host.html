@@ -3,6 +3,7 @@
 <head>
     <title>Blooket Master Host</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://ably.com"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #0f172a; color: #fff; }
         .box { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 600px; margin: 20px auto; }
@@ -29,9 +30,10 @@
         </div>
     </div>
     <script>
+        const ably = new Ably.Realtime('M-g0bA.9uD_9Q:F6Yd_L2XWcR6N1Z_xGz3v4b5n6m7L8k9J0h1G2f3e4d');
         let myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
         let hostState = { players: {}, roundActive: false, timeLeft: 300, timerId: null };
-        let listenInterval;
+        let gameChannel;
 
         const questions = [
             { q: "What is the capital of France?", c: ["London", "Paris", "Rome", "Berlin"], a: "2" },
@@ -49,30 +51,22 @@
         ];
 
         window.onload = function() {
-            // FIX: Forces the 4-letter room code to show up immediately on load with no external lags
             document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
             
-            listenInterval = setInterval(() => {
-                let raw = localStorage.getItem('blooket_player_to_host_' + myRoomCode);
-                if (raw) {
-                    let msg = JSON.parse(raw);
-                    localStorage.removeItem('blooket_player_to_host_' + myRoomCode); // Clear read flag
-                    
-                    if (msg.type === 'joinRequest') {
-                        hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
-                        updateHostLeaderboard();
-                    } else if (msg.type === 'submitAnswer') {
-                        handlePlayerAnswer(msg.sender, msg.guess, msg.correctIndex);
-                    } else if (msg.type === 'requestNextQuestion') {
-                        sendQuestionToSinglePlayer(msg.sender);
-                    }
+            gameChannel = ably.channels.get('room_' + myRoomCode);
+            
+            gameChannel.subscribe('msg', function(message) {
+                let msg = message.data;
+                if (msg.type === 'joinRequest') {
+                    hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
+                    updateHostLeaderboard();
+                } else if (msg.type === 'submitAnswer') {
+                    handlePlayerAnswer(msg.sender, msg.guess, msg.correctIndex);
+                } else if (msg.type === 'requestNextQuestion') {
+                    sendQuestionToSinglePlayer(msg.sender);
                 }
-            }, 500);
+            });
         };
-
-        function sendBroadcast(data) {
-            localStorage.setItem('blooket_host_to_player_' + myRoomCode, JSON.stringify(data));
-        }
 
         function updateHostLeaderboard() {
             const board = document.getElementById('leaderboard');
@@ -84,7 +78,7 @@
         function hostStartGame() {
             if (hostState.roundActive) return;
             hostState.roundActive = true;
-            sendBroadcast({ type: 'gameStarted' });
+            gameChannel.publish('msg', { type: 'gameStarted' });
             setTimeout(() => {
                 Object.keys(hostState.players).forEach(uuid => { sendQuestionToSinglePlayer(uuid); });
             }, 400);
@@ -100,7 +94,7 @@
 
         function sendQuestionToSinglePlayer(uuid) {
             let rand = Math.floor(Math.random() * questions.length);
-            sendBroadcast({ type: 'nextQuestion', target: uuid, q: questions[rand].q, choices: questions[rand].c, correct: questions[rand].a });
+            gameChannel.publish('msg', { type: 'nextQuestion', target: uuid, q: questions[rand].q, choices: questions[rand].c, correct: questions[rand].a });
         }
 
         function handlePlayerAnswer(uuid, guess, correctIndex) {
@@ -124,21 +118,21 @@
                         outcome = { type: "swap", display: "🔄 COIN SWAP", msg: `🔄 SWAPPED banks with ${victim.name}!` };
                     } else { player.coins += 40; outcome = { type: "coins", display: "🪙 +40 Coins", msg: `Gained +🪙 40 Coins!` }; }
                 } else { player.coins *= 3; outcome = { type: "triple", display: "💥 TRIPLE!!!", msg: `💥 TRIPLE COINS JACKPOT!!!` }; }
-                sendBroadcast({ type: 'coinResult', target: uuid, success: true, reward: outcome });
-            } else { sendBroadcast({ type: 'coinResult', target: uuid, success: false }); }
+                gameChannel.publish('msg', { type: 'coinResult', target: uuid, success: true, reward: outcome });
+            } else { gameChannel.publish('msg', { type: 'coinResult', target: uuid, success: false }); }
             updateHostLeaderboard();
         }
 
         function hostEndGame() {
             clearInterval(hostState.timerId);
-            clearInterval(listenInterval);
             let sorted = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
-            sendBroadcast({ type: 'gameOver', winner: sorted });
+            gameChannel.publish('msg', { type: 'gameOver', winner: sorted });
             alert("Game Over! Winner listed on player screens.");
         }
     </script>
 </body>
 </html>
+
 
 
 
