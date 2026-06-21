@@ -3,7 +3,7 @@
 <head>
     <title>Blooket Player Room</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://ably.com"></script>
+    <script src="https://pusher.com"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #f8fafc; color: #1e293b; }
         .container { max-width: 500px; margin: auto; }
@@ -58,8 +58,8 @@
         </div>
     </div>
     <script>
-        // Production public unblocked Ably messaging key
-        const ably = new Ably.Realtime('M-g0bA.9uD_9Q:F6Yd_L2XWcR6N1Z_xGz3v4b5n6m7L8k9J0h1G2f3e4d');
+        // Unblocked public client layer setup strings
+        const pusher = new Pusher('de4e8ffb1979b9bfcf23', { cluster: 'eu' });
         let playerUUID = 'user_' + Math.random().toString(36).substring(2, 7);
         let myRoomCode = "", myName = "", currentCorrectIndex = "", gameChannel;
         const visualPrizes = ["🪙 Coins", "🚨 Steal!", "🔄 Swap", "💥 Triple!"];
@@ -72,10 +72,9 @@
             document.getElementById('login-screen').style.display = 'none';
             document.getElementById('waiting-room').style.display = 'block';
             
-            gameChannel = ably.channels.get('room_' + myRoomCode);
+            gameChannel = pusher.subscribe('presence-quiz-' + myRoomCode);
             
-            gameChannel.subscribe('msg', function(message) {
-                let msg = message.data;
+            gameChannel.bind('client-event', function(msg) {
                 if (msg.type === 'gameStarted') {
                     document.getElementById('waiting-room').style.display = 'none';
                     document.getElementById('game-screen').style.display = 'block';
@@ -92,8 +91,10 @@
                 }
             });
 
-            // Send information directly up to the global server cloud highway
-            gameChannel.publish('msg', { type: 'joinRequest', name: myName, sender: playerUUID });
+            // Trigger join ping onto host screen network layer
+            setTimeout(() => {
+                gameChannel.trigger('client-event', { type: 'joinRequest', name: myName, sender: playerUUID });
+            }, 600);
         }
 
         function displayQuestion(data) {
@@ -111,11 +112,11 @@
 
         function pick(choiceNum) {
             document.getElementById('button-grid').style.pointerEvents = 'none';
-            gameChannel.publish('msg', { type: 'submitAnswer', guess: choiceNum, correctIndex: currentCorrectIndex, sender: playerUUID });
+            gameChannel.trigger('client-event', { type: 'submitAnswer', guess: choiceNum, correctIndex: currentCorrectIndex, sender: playerUUID });
         }
 
         function getNextQuestion() {
-            gameChannel.publish('msg', { type: 'requestNextQuestion', sender: playerUUID });
+            gameChannel.trigger('client-event', { type: 'requestNextQuestion', sender: playerUUID });
         }
 
         function displayAnimation(data) {
