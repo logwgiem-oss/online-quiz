@@ -3,8 +3,6 @@
 <head>
     <title>Blooket Master Host</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://gstatic.com"></script>
-    <script src="https://gstatic.com"></script>
     <style>
         body { font-family: sans-serif; text-align: center; margin: 0; padding: 20px; background: #0f172a; color: #fff; }
         .box { background: #1e293b; padding: 20px; border-radius: 12px; max-width: 600px; margin: 20px auto; }
@@ -31,12 +29,9 @@
         </div>
     </div>
     <script>
-        const firebaseConfig = { databaseURL: "https://firebaseio.com" };
-        firebase.initializeApp(firebaseConfig);
-        const database = firebase.database();
-
         let myRoomCode = Math.random().toString(36).substring(2, 6).toUpperCase();
         let hostState = { players: {}, roundActive: false, timeLeft: 300, timerId: null };
+        let eventSource;
 
         const questions = [
             { q: "What is the capital of France?", c: ["London", "Paris", "Rome", "Berlin"], a: "2" },
@@ -56,36 +51,29 @@
         window.onload = function() {
             document.getElementById('room-code-display').innerText = `🔑 JOIN CODE: ${myRoomCode}`;
             
-            database.ref('rooms/' + myRoomCode + '/gameState').set({ status: 'lobby' });
-
-            // Watch the database for joining players or answers
-            database.ref('rooms/' + myRoomCode + '/players').on('value', function(snapshot) {
-                let data = snapshot.val();
-                if (!data) return;
-
-                Object.keys(data).forEach(uuid => {
-                    let p = data[uuid];
-                    
-                    // Track new players
-                    if (!hostState.players[uuid]) {
-                        hostState.players[uuid] = { id: uuid, name: p.name, coins: p.coins };
+            eventSource = new EventSource(`https://nodeflux.org{myRoomCode}`);
+            eventSource.onmessage = function(event) {
+                try {
+                    let msg = JSON.parse(event.data);
+                    if (msg.type === 'joinRequest') {
+                        hostState.players[msg.sender] = { id: msg.sender, name: msg.name, coins: 100 };
                         updateHostLeaderboard();
+                    } else if (msg.type === 'submitAnswer') {
+                        handlePlayerAnswer(msg.sender, msg.guess, msg.correctIndex);
+                    } else if (msg.type === 'requestNextQuestion') {
+                        sendQuestionToSinglePlayer(msg.sender);
                     }
-
-                    // Process dynamic in-game actions
-                    if (p.action && p.action !== "waiting") {
-                        let act = p.action;
-                        database.ref('rooms/' + myRoomCode + '/players/' + uuid + '/action').set("waiting");
-
-                        if (act.type === 'submitAnswer') {
-                            handlePlayerAnswer(uuid, act.guess, act.correctIndex);
-                        } else if (act.type === 'requestNextQuestion') {
-                            sendQuestionToSinglePlayer(uuid);
-                        }
-                    }
-                });
-            });
+                } catch(e) {}
+            };
         };
+
+        function sendBroadcast(data) {
+            fetch(`https://nodeflux.org{myRoomCode}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(data)
+            });
+        }
 
         function updateHostLeaderboard() {
             const board = document.getElementById('leaderboard');
@@ -97,9 +85,10 @@
         function hostStartGame() {
             if (hostState.roundActive) return;
             hostState.roundActive = true;
-            
-            database.ref('rooms/' + myRoomCode + '/gameState/status').set('started');
-            Object.keys(hostState.players).forEach(uuid => { sendQuestionToSinglePlayer(uuid); });
+            sendBroadcast({ type: 'gameStarted' });
+            setTimeout(() => {
+                Object.keys(hostState.players).forEach(uuid => { sendQuestionToSinglePlayer(uuid); });
+            }, 400);
             
             hostState.timerId = setInterval(() => {
                 hostState.timeLeft--;
@@ -112,58 +101,44 @@
 
         function sendQuestionToSinglePlayer(uuid) {
             let rand = Math.floor(Math.random() * questions.length);
-            database.ref('rooms/' + myRoomCode + '/playerQuestions/' + uuid).set({
-                q: questions[rand].q,
-                choices: questions[rand].c,
-                correct: questions[rand].a
-            });
+            sendBroadcast({ type: 'nextQuestion', target: uuid, q: questions[rand].q, choices: questions[rand].c, correct: questions[rand].a });
         }
 
         function handlePlayerAnswer(uuid, guess, correctIndex) {
             if (!hostState.roundActive || !hostState.players[uuid]) return;
             let player = hostState.players[uuid];
-
             if (guess === correctIndex) {
                 let roll = Math.floor(Math.random() * 4), outcome = {};
                 if (roll === 0) {
                     let cash = Math.floor(Math.random() * 50) + 20; player.coins += cash;
-                    outcome = { rewardDisplay: `🪙 +${cash} Coins`, rewardMsg: `Plus +🪙 ${cash} Coins!` };
+                    outcome = { type: "coins", display: `🪙 +${cash} Coins`, msg: `Plus +🪙 ${cash} Coins!` };
                 } else if (roll === 1) {
                     let leader = Object.values(hostState.players).reduce((max, p) => p.coins > max.coins ? p : max, {coins: 0});
                     if (leader && leader.id !== uuid && leader.coins > 20) {
                         let stolen = Math.floor(leader.coins * 0.25); leader.coins -= stolen; player.coins += stolen;
-                        outcome = { rewardDisplay: "🚨 25% STEAL", rewardMsg: `🚨 25% STEAL! You took 🪙 ${stolen} from ${leader.name}!` };
-                    } else { player.coins += 30; outcome = { rewardDisplay: "🪙 +30 Coins", rewardMsg: `Gained +🪙 30 Coins!` }; }
+                        outcome = { type: "steal", display: "🚨 25% STEAL", msg: `🚨 25% STEAL! You took 🪙 ${stolen} from ${leader.name}!` };
+                    } else { player.coins += 30; outcome = { type: "coins", display: "🪙 +30 Coins", msg: `Gained +🪙 30 Coins!` }; }
                 } else if (roll === 2) {
                     let pool = Object.values(hostState.players).filter(p => p.id !== uuid);
                     if (pool.length > 0) {
                         let victim = pool[Math.floor(Math.random() * pool.length)], temp = player.coins; player.coins = victim.coins; victim.coins = temp;
-                        outcome = { rewardDisplay: "🔄 COIN SWAP", rewardMsg: `🔄 SWAPPED banks with ${victim.name}!` };
-                    } else { player.coins += 40; outcome = { rewardDisplay: "🪙 +40 Coins", rewardMsg: `Gained +🪙 40 Coins!` }; }
-                } else { player.coins *= 3; outcome = { rewardDisplay: "💥 TRIPLE!!!", rewardMsg: `💥 TRIPLE COINS JACKPOT!!!` }; }
-                
-                database.ref('rooms/' + myRoomCode + '/playerResults/' + uuid).set({ success: true, ...outcome });
-            } else { 
-                database.ref('rooms/' + myRoomCode + '/playerResults/' + uuid).set({ success: false }); 
-            }
-            database.ref('rooms/' + myRoomCode + '/players/' + uuid + '/coins').set(player.coins);
+                        outcome = { type: "swap", display: "🔄 COIN SWAP", msg: `🔄 SWAPPED banks with ${victim.name}!` };
+                    } else { player.coins += 40; outcome = { type: "coins", display: "🪙 +40 Coins", msg: `Gained +🪙 40 Coins!` }; }
+                } else { player.coins *= 3; outcome = { type: "triple", display: "💥 TRIPLE!!!", msg: `💥 TRIPLE COINS JACKPOT!!!` }; }
+                sendBroadcast({ type: 'coinResult', target: uuid, success: true, reward: outcome });
+            } else { sendBroadcast({ type: 'coinResult', target: uuid, success: false }); }
             updateHostLeaderboard();
         }
 
         function hostEndGame() {
             clearInterval(hostState.timerId);
             let sorted = Object.values(hostState.players).sort((a,b) => b.coins - a.coins);
-            let winner = sorted[0] || { name: "Nobody", coins: 0 };
-            
-            database.ref('rooms/' + myRoomCode + '/gameState').set({
-                status: 'ended',
-                winnerName: winner.name,
-                winnerCoins: winner.coins
-            });
+            sendBroadcast({ type: 'gameOver', winner: sorted });
             alert("Game Over! Winner listed on player screens.");
         }
     </script>
 </body>
 </html>
+
 
 
