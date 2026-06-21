@@ -29,7 +29,7 @@
             <h1>🎒 Enter Quiz Lobby</h1>
             <input type="text" id="roomcode" placeholder="Enter 4-Letter Join Code...">
             <input type="text" id="username" placeholder="Type Your Nickname...">
-            <button class="btn" onclick="joinLobby()">ENTER GAME</button>
+            <button class="btn" id="join-btn" onclick="joinLobby()">ENTER GAME</button>
         </div>
         <div id="waiting-room" style="display:none;">
             <h2>Logged in successfully! 👍</h2>
@@ -61,19 +61,32 @@
             myName = document.getElementById('username').value.trim();
             if (!myRoomCode || !myName) return alert("Fill in code and nickname!");
             
-            document.getElementById('login-screen').style.display = 'none';
-            document.getElementById('waiting-room').style.display = 'block';
+            document.getElementById('join-btn').innerText = "CONNECTING...";
+            document.getElementById('join-btn').disabled = true;
             
-            // Connect to ScaleDrone free channel highway
+            // Connect to ScaleDrone public stream setup
             drone = new ScaleDrone('7T79F7vOsh9K3w1f');
             
             drone.on('open', error => {
-                if (error) return console.error(error);
-                room = drone.subscribe('observable-room-' + myRoomCode);
+                if (error) {
+                    alert("Connection failed! Try again.");
+                    document.getElementById('join-btn').innerText = "ENTER GAME";
+                    document.getElementById('join-btn').disabled = false;
+                    return;
+                }
+                
+                // Fixed layout name format requirement for public room channels
+                room = drone.subscribe('room_' + myRoomCode);
                 
                 room.on('open', error => {
                     if (!error) {
-                        sendMsg({ type: 'joinRequest', name: myName, sender: playerUUID });
+                        document.getElementById('login-screen').style.display = 'none';
+                        document.getElementById('waiting-room').style.display = 'block';
+                        
+                        // FIX: Added small lag timer to guarantee connection handshake completes first
+                        setTimeout(() => {
+                            sendMsg({ type: 'joinRequest', name: myName, sender: playerUUID });
+                        }, 500);
                     }
                 });
 
@@ -99,7 +112,7 @@
 
         function sendMsg(data) {
             drone.publish({
-                room: 'observable-room-' + myRoomCode,
+                room: 'room_' + myRoomCode,
                 message: data
             });
         }
@@ -127,10 +140,6 @@
             sendMsg({ type: 'requestNextQuestion', sender: playerUUID });
         }
 
-        document.addEventListener('DOMContentLoaded', () => {
-            const visualPrizes = ["🪙 Coins", "🚨 Steal!", "🔄 Swap", "💥 Triple!"];
-        });
-
         function displayAnimation(data) {
             const grid = document.getElementById('button-grid'), rewardZone = document.getElementById('reward-zone'), wheel = document.getElementById('lucky-wheel'), status = document.getElementById('spin-status'), msgBox = document.getElementById('final-msg'), nextBtn = document.getElementById('next-btn');
             grid.style.display = 'none'; rewardZone.style.display = 'block';
@@ -156,7 +165,6 @@
     </script>
 </body>
 </html>
-
 
 
 
