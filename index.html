@@ -63,15 +63,18 @@
             document.getElementById('login-screen').style.display = 'none';
             document.getElementById('waiting-room').style.display = 'block';
             
-            // Connect to unblockable open web connection pipeline
-            ws = new WebSocket(`wss://api.tinode.co/v0/channels/blooket_game_${myRoomCode}`);
+            // Connect to an open, free, unblocked server lane link
+            ws = new WebSocket(`wss://free.echo.websocket.org`);
             
             ws.onopen = function() {
-                sendMsg({ type: 'joinRequest', name: myName, sender: playerUUID });
+                sendMsg({ type: 'joinRequest', name: myName, sender: playerUUID, room: myRoomCode });
             };
 
             ws.onmessage = function(event) {
                 let msg = JSON.parse(event.data);
+                // Filter messages so you only listen to your custom room code channel
+                if (msg.room !== myRoomCode) return;
+
                 if (msg.type === 'gameStarted') {
                     document.getElementById('waiting-room').style.display = 'none';
                     document.getElementById('game-screen').style.display = 'block';
@@ -97,6 +100,10 @@
             }
         }
 
+        document.addEventListener('DOMContentLoaded', () => {
+            const visualPrizes = ["🪙 Coins", "🚨 Steal!", "🔄 Swap", "💥 Triple!"];
+        });
+
         function displayQuestion(data) {
             currentCorrectIndex = data.correct;
             document.getElementById('button-grid').style.display = 'grid';
@@ -113,21 +120,21 @@
 
         function pick(choiceNum) {
             document.getElementById('button-grid').style.pointerEvents = 'none';
-            sendMsg({ type: 'submitAnswer', guess: choiceNum, correctIndex: currentCorrectIndex, sender: playerUUID });
+            sendMsg({ type: 'submitAnswer', guess: choiceNum, correctIndex: currentCorrectIndex, sender: playerUUID, room: myRoomCode });
         }
 
         function getNextQuestion() {
-            sendMsg({ type: 'requestNextQuestion', sender: playerUUID });
+            sendMsg({ type: 'requestNextQuestion', sender: playerUUID, room: myRoomCode });
         }
 
         function displayAnimation(data) {
             const grid = document.getElementById('button-grid'), rewardZone = document.getElementById('reward-zone'), wheel = document.getElementById('lucky-wheel'), status = document.getElementById('spin-status'), msgBox = document.getElementById('final-msg'), nextBtn = document.getElementById('next-btn');
             grid.style.display = 'none'; rewardZone.style.display = 'block';
             if (data.success) {
-                msgBox.innerText = ""; status.innerText = "✨ CORRECT ANSWER!"; wheel.classList.add('spinning');
+                msgBox.innerText = ""; status.innerText = "✨ CORRECT ANSWER!"; wheel.className = "wheel-box spinning";
                 let shuffleTimer = setInterval(() => { wheel.innerText = visualPrizes[Math.floor(Math.random() * visualPrizes.length)]; }, 60);
                 setTimeout(() => {
-                    clearInterval(shuffleTimer); wheel.classList.remove('spinning'); wheel.innerText = data.reward.display;
+                    clearInterval(shuffleTimer); wheel.className = "wheel-box"; wheel.innerText = data.reward.display;
                     msgBox.className = "win-gold"; msgBox.innerText = data.reward.msg; nextBtn.style.display = 'block';
                 }, 1200);
             } else {
